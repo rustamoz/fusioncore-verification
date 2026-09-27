@@ -53,13 +53,16 @@ python3 tools/evaluate.py --gt gt.tum --fusioncore fc.tum --rl rl.tum \
 | Build reproduces the author's filter to 1-2 m | `analysis/trajectory_agreement.py` |
 | Paper's implied-speed arithmetic is off by 1000x | `analysis/scan_gps_jumps.py` |
 | The adversarial cluster is internally smooth | `analysis/gps_cluster_window.py` |
-| Chi-squared gate rejects the whole cluster | `analysis/rejection_reasons.py`, `analysis/gnss_status_window.py` |
+| Chi-squared gate rejects the corrupted cluster | `analysis/rejection_reasons.py`, `analysis/gnss_status_window.py` |
 | Injected outage landed where intended | `analysis/outage_gaps.py` |
 | Every run initialised at the origin | `analysis/first_pose.py` |
 | Health metrics do not separate the ablation arms | `analysis/filter_health_window.py` |
 | Heading and position divergence between arms | `analysis/compare_arms.py` |
 | Long-run excursion vs outage re-anchoring | `analysis/largest_jump.py` |
 | Duplicate timestamps in recordings | `analysis/dedup.py` |
+| The gate locks out: ~1,000 consecutive rejections in every run | `analysis/rejection_episodes.py` |
+| Rejected fixes are as accurate as accepted ones | `analysis/fix_vs_truth.py` |
+| Sigma grows 55x in a blackout; 46 good fixes rejected after | `analysis/coast_sigma.py` |
 
 Scripts that read bags import `_bag.py` and need a sourced ROS 2
 environment with the FusionCore messages built. The rest need only Python.

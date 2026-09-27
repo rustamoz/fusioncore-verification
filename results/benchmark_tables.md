@@ -25,12 +25,15 @@ uses evo). All FusionCore runs used 3x playback unless stated.
 | Pose-by-pose disagreement over the whole run | 0.0 to 1.9 m |
 | My ground truth vs the author's shipped ground truth | identical to 6 d.p.; 11,679 vs 11,754 poses (75 outliers above 30 m/s removed by my converter) |
 
-### Unexplained long-run excursion
+### Long-run excursions on the old harness
 
 | Run | Largest single-step jump | Mission time |
 |---|---|---|
 | 2012-01-08, 3x | 324.1 m | t+3910.9 s |
 | 2012-01-08, 1x | 600.5 m | t+4341.8 s |
+
+Consistent with the GPS lockout in section 3 below; these recordings no
+longer exist, so that was not confirmed.
 
 ## 2. Claim one: the velocity pre-gate (report section 3)
 
@@ -49,22 +52,6 @@ uses evo). All FusionCore runs used 3x playback unless stated.
 | t+3984.2 s | 823.5 m | 0.40 s | 2051.4 m/s |
 | t+4352.4 s | 324.0 m | 36.00 s | 9.0 m/s |
 
-### The adversarial cluster (script: `gps_cluster_window.py`)
-
-234 mode-3 fixes between t+3940 and t+4010 s. Consecutive steps 0.2 to 6.3 m
-at intervals of 0.19 to 2.01 s, implied speeds 0.8 to 31.1 m/s.
-
-### Gate decisions on 2012-08-20 (script: `rejection_reasons.py`, `gnss_status_window.py`)
-
-| Quantity | Value |
-|---|---|
-| Fixes accepted | 17,093 |
-| Fixes rejected by the chi-squared gate | 2,862 |
-| Fix named by the paper, t+3959.6 s | rejected, d2 = 83.3, threshold 16.27 |
-| Window t+3950 to t+3978 s | every fix rejected, d2 71 to 88, in coast mode |
-| Position sigma in that window | 63.4 to 68.0 m |
-| First fix accepted, t+3978.4 s | d2 = 16.2; sigma 68.01 m to 3.06 m |
-
 ### Ordinary steps the pre-gate would reject (script: `figures/fig_speedgate.py`)
 
 Of 19,741 fix-to-fix steps under 300 m on 2012-08-20, 30 imply more than
@@ -72,18 +59,37 @@ Of 19,741 fix-to-fix steps under 300 m on 2012-08-20, 30 imply more than
 fixes on this sequence. Whether the 30 are GPS errors or valid readings
 was not determined.
 
-### Injected blackout, 200 s, on 2012-01-08
+### The corrupted cluster (script: `gps_cluster_window.py`)
+
+234 mode-3 fixes between t+3940 and t+4010 s. Consecutive steps 0.2 to 6.3 m
+at intervals of 0.19 to 2.01 s, implied speeds 0.8 to 31.1 m/s.
+
+### Gate decisions on 2012-08-20 (scripts: `rejection_reasons.py`, `gnss_status_window.py`)
 
 | Quantity | Value |
 |---|---|
-| Position sigma, nominal | 2 to 3 m |
-| Position sigma, peak during coast | 77.5 m * |
-| d2 of rejected fixes during coast | 16.3 to 18.3 |
-| Rejections | 46 chi-squared, 0 pre-gate; 777 accepted |
+| Fixes accepted | 17,093 |
+| Fixes rejected by the chi-squared gate, whole run | 2,862 |
+| Fix named by the paper, t+3959.6 s | rejected, d2 = 83.3, threshold 16.27 |
+| Window t+3950 to t+3978 s | every fix rejected, d2 71 to 88 (4.4 to 5.4x threshold), in coast mode |
+| Position sigma in that window | 63.4 to 68.0 m |
+| First fix accepted, t+3978.4 s | d2 = 16.2; sigma 68.01 m to 3.06 m |
 
-\* The recorded peak and the value just before re-acquisition (78.42 m)
-disagree slightly. To be confirmed by re-extracting from the bag before
-the report is final.
+### Injected 200 s blackout on 2012-01-08, old harness (script: `coast_sigma.py`)
+
+The injected spike did not land after the blackout (the injector times it
+from playback start), so every fix arriving after the outage was genuine.
+
+| Quantity | Value |
+|---|---|
+| Position sigma before the outage | 1.42 m median |
+| Peak position sigma | 78.4 m (78.13 m on the 1 Hz health topic, 78.42 m at the last rejected fix) |
+| Growth | about 55x |
+| Rejections after the outage | 46, all chi-squared, none by the pre-gate |
+| d2 of those rejections | 16.32 to 122.68 (closest 0.3% over the 16.27 threshold) |
+| First fix accepted | d2 = 16.26, 0.06% under the threshold |
+
+These 46 were good fixes, so this is a short lockout (section 3 below).
 
 ### Injected spike with no preceding blackout
 
@@ -94,7 +100,40 @@ the report is final.
 
 The chi-squared gate rejected the same spike at d2 = 46,515 in an earlier run.
 
-## 3. Claim two: the 23rd state (report section 4)
+## 3. The GPS lockout (report section 5)
+
+Four ablation runs on 2012-01-08, corrected harness.
+
+### Rejection episodes (script: `rejection_episodes.py`)
+
+| Run | Rejected overall | Longest episode | Rejections in it | Peak sigma |
+|---|---|---|---|---|
+| Active, no outage | 1,361 of 21,981 (6.2%) | t+3492 to 3714 s | 998 | 81.2 m |
+| Frozen, no outage | 1,215 of 21,973 (5.5%) | t+3492 to 3712 s | 998 | 68.7 m |
+| Active, outage | 7,347 of 21,020 (35.0%) | t+3492 s to end of run | 7,340 | 209.0 m |
+| Frozen, outage | 1,352 of 21,023 (6.4%) | t+3493 to 3942 s | 1,115 | 97.5 m |
+
+Episodes shared by all four runs: t+2971 (6 rejections), t+3419 (1),
+t+3492 (above), t+4125 (54 to 55), t+5022 (155 to 300; the active arm's
+longest). The active outage run has only the first three, because it never
+left the t+3492 episode.
+
+### Are the rejected fixes bad? (script: `fix_vs_truth.py`)
+
+Error of each GNSS fix against the nearest RTK ground-truth fix within 1 s.
+
+| Run | Fixes | Matched to RTK | Median error | 90th percentile |
+|---|---|---|---|---|
+| Active, no outage | accepted | 18,975 / 20,620 | 3.5 m | 10.5 m |
+| | rejected, whole run | 1,063 / 1,361 | 4.3 m | 8.3 m |
+| | rejected, t+3492 to 3714 s | 762 / 998 | 4.8 m | 8.2 m |
+| Active, outage | accepted | 12,676 / 13,673 | 4.0 m | 12.8 m |
+| | rejected, whole run | 6,408 / 7,347 | 3.2 m | 7.1 m |
+
+The rejected fixes are as accurate as the accepted ones: the gate was
+rejecting good GPS.
+
+## 4. Claim two: the 23rd state (report section 4)
 
 Four runs of 2012-01-08 on the corrected harness, differing only in
 `ukf.encoder_wz_bias_noise_scale` and the presence of an injected
@@ -118,7 +157,7 @@ Four runs of 2012-01-08 on the corrected harness, differing only in
 
 Spread 0.787 m on a 253.8 m baseline.
 
-### Mechanism
+### Trajectory shape
 
 | Run | Path length ratio | RPE at 10 m | Drift |
 |---|---|---|---|
@@ -131,15 +170,15 @@ Spread 0.787 m on a 253.8 m baseline.
 
 | Run | Jump | Time | Attribution |
 |---|---|---|---|
-| No outage, active | 373.1 m | t+3917 s | long-run excursion |
-| No outage, frozen | 343.1 m | t+3916 s | long-run excursion |
-| Outage, active | 187.3 m | t+306 s | GPS re-anchoring after outage |
-| Outage, frozen | 387.0 m | t+3942 s | long-run excursion |
+| No outage, active | 373.1 m | t+3917 s | about 200 s after the lockout's last rejection |
+| No outage, frozen | 343.1 m | t+3916 s | about 200 s after the lockout's last rejection |
+| Outage, active | 187.3 m | t+306 s | re-anchoring after the injected outage; never left the later lockout |
+| Outage, frozen | 387.0 m | t+3942 s | end of the lockout, same second |
 
-The re-anchoring jump at t+306 s occurs in both outage arms
+The re-anchoring jump at about t+306 s occurs in both outage arms
 (`compare_arms.py`); after it they agree to 0.7 m.
 
-## 4. Harness defects (report section 5)
+## 5. Harness defects (report section 6)
 
 ### Duplicate timestamps in recorded odometry (script: `dedup.py`)
 
@@ -149,10 +188,11 @@ The re-anchoring jump at t+306 s occurs in both outage arms
 | 2012-01-08, 1x | 939,242 | 432,262 | 54.0% |
 | 2012-08-20 | 558,396 | 117,813 | 78.9% |
 | Ablation, first attempt | 242,195 | 11,995 | 95.0% |
-| 60 s slice, before fix | 1,671 | 1,054 | 36.9% |
-| 60 s slice, after fix | 1,234 | 1,234 | 0.0% |
+| 60 s slice, after the shutdown fixes | 1,671 | 1,054 | 36.9% |
+| 60 s slice, after the publish check | 1,234 | 1,234 | 0.0% |
 
-After the fix the stack exits on its own, 41 s after launch for the 60 s slice.
+After the shutdown fixes the stack exits on its own, 41 s after launch for
+the 60 s slice.
 
 Re-scoring earlier runs from de-duplicated trajectories reproduced every
 ATE to three decimal places (64.719, 149.913, 30.330 m).
@@ -166,3 +206,4 @@ Kept for the record; not used in the report.
 | First ablation pair: 56.446 m vs 86.832 m | RL-EKF control differed tenfold between arms; runs not comparable |
 | Second ablation pair (old harness): 73.948 m vs 65.832 m | Replaced by the four-run set on the corrected harness |
 | 2012-01-08 at 1.5x: 448.468 m | Bag written without a message index; trajectory scrambled |
+| Injected blackout: sigma 77.5 m, d2 16.3 to 18.3 | Read from a partial window; replaced by full extraction above |
