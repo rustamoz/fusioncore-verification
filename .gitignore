@@ -10,3 +10,8 @@ __pycache__/
 *.pyc
 # os
 .DS_Store
+# animation inputs, derived from NCLT, and local fonts
+anim_export/
+figdata/
+*.zip
+fonts/

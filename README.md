@@ -8,8 +8,8 @@ trajectory error than `robot_localization` on ten of twelve sequences of
 the NCLT dataset.
 
 I tested three of its claims against its source code and the original
-data. Two did not hold, and the failure the filter actually shows is the
-reverse of the one the paper describes.
+data. Two did not hold. The third did, on a different sequence from the
+one the paper studied, and with worse consequences than it describes.
 
 Full report: [`report/report.md`](report/report.md).
 
@@ -30,31 +30,33 @@ threshold allows 4.2 km of movement after 211 s.
 
 ![Speed check](figures/fig_speedgate.png)
 
-## 2. The real failure: the gate locks out good GPS
+Animated: [the check's allowance growing with the gap](animations/threshold.mp4).
 
-The paper worries about a blackout blinding the gate so that it accepts
-bad GPS. On this data it does the opposite. Once the filter's estimate
-drifts, the gate starts rejecting **good** fixes, the drift grows, and the
-gate keeps rejecting.
+## 2. The paper's failure does happen: on another sequence, and worse
 
-Every full run I analysed locked out at the same point, just after a
-natural GPS gap in the data, for around a thousand consecutive fixes. The
+On 2012-08-20, the sequence the paper analyses, the gate held. On 2012-01-08
+it didn't. After a real 112-second signal loss, the GPS receiver's first fix
+came back 157 m from the truth, and the filter's inflated uncertainty let it
+through. The proposed velocity check would have passed it too: 166 m in
+112 s is 1.48 m/s.
+
+Accepting that fix collapsed the filter's uncertainty at the wrong place, so
+the good fixes that followed were rejected: around a thousand in a row in
+every run, and in one run for the last 2,000 seconds of the sequence. The
 rejected fixes were ordinary GPS, within a few metres of RTK ground truth
-(median 4.8 m, against 3.5 m for accepted fixes), nothing like the ~700 m
-of a genuinely corrupted fix. One run never recovered, and refused GPS for
-the last 2,000 seconds of the sequence.
+(median 4.8 m, against 3.5 m for accepted fixes).
 
-![Lockout](figures/fig_lockout.png)
+![Animation of two filter runs side by side. GPS returns after a signal loss with a first fix 157 m from the truth, which both filters accept. Their uncertainty collapses and the good fixes that follow are all rejected as they converge on the true path. After a second signal loss one run recovers when a fix scores 16.25 against the 16.27 threshold; the other never does.](animations/lockout.gif)
 
-The lockout doesn't start when GPS returns. The first returning fix is
-accepted, the filter's uncertainty collapses, and the gate then rejects the
-good fixes that follow.
+Full-resolution video and a text transcript: [`animations/`](animations/). Static version for all four runs: [`figures/fig_lockout.png`](figures/fig_lockout.png).
 
 ![Fix accuracy](figures/fig_fix_accuracy.png)
 
-This also explains the few-hundred-metre excursions that inflate every
-full-length run: they are what happens when a lockout ends and the
-estimate snaps back.
+This explains the few-hundred-metre excursions that inflate every
+full-length run: they are the moment a lockout ends and the estimate snaps
+back. The repository's outage injector can't reproduce any of it, because
+it deletes fixes while the receiver keeps its signal, so the fix after an
+injected outage is as good as any other.
 
 ## 3. No evidence the novel state helps
 
@@ -73,7 +75,9 @@ lower error with GPS available (9%) and across a 200 s outage (75%).
 
 Both differences trace back to the lockouts. In the outage runs, the frozen
 arm escaped its lockout after about 450 seconds; the active arm never did.
-Escaping is knife-edge, so with one run per configuration this can't show
+Escaping is knife-edge: the two arms drifted by similar amounts while
+coasting blind (198 m and 170 m), and the difference in outcome came from
+the direction of the drift. With one run per configuration this can't show
 whether the state *systematically* makes lockouts worse. What it does show
 is that the claimed improvement isn't supported.
 
@@ -99,8 +103,9 @@ which the paper does not state.
 
 ## Limits
 
-- Why the fixes after a natural GPS gap get rejected, and why the
-  author's runs apparently don't lock out, are not established.
+- Why the author's runs apparently don't lock out is not established.
+- Every controlled experiment used injected outages, which don't reproduce
+  the corrupted fixes a real receiver produces when it re-acquires.
 - One sequence for the ablation, one run per configuration. Playback is
   deterministic, so repeats would be identical, but this does not
   generalise beyond that sequence.
@@ -116,6 +121,7 @@ which the paper does not state.
 | | |
 |---|---|
 | [`report/`](report/report.md) | The full report |
+| [`animations/`](animations/) | The lockout and the velocity check, animated, with transcripts |
 | [`results/`](results/benchmark_tables.md) | Every number, with the run that produced it |
 | [`scripts/`](scripts/README.md) | Analysis and figure scripts, and how to reproduce |
 | [`patches/`](patches/) | The code changes to FusionCore |

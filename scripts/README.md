@@ -64,6 +64,8 @@ python3 tools/evaluate.py --gt gt.tum --fusioncore fc.tum --rl rl.tum \
 | Rejected fixes are as accurate as accepted ones | `analysis/fix_vs_truth.py` |
 | Sigma grows 55x in a blackout; 46 good fixes rejected after | `analysis/coast_sigma.py` |
 | Lockouts follow natural GPS gaps, starting after an accepted fix | `figures/gps_gaps.py` |
+| Lockouts start when a corrupted first fix after a real signal loss gets through | `animations/first_fix.py` |
+| The pre-gate passes every post-gap fix (0.34 to 1.48 m/s) | `animations/first_fix.py` |
 
 Scripts that read bags import `_bag.py` and need a sourced ROS 2
 environment with the FusionCore messages built. The rest need only Python.
@@ -99,3 +101,10 @@ data and reproduces the figures in `results/`. Re-running
 `trajectory_agreement.py` on the full set of matched timestamps corrected
 one figure: the build agrees with the author's trajectory to within
 2.60 m (mean 1.09 m), not the 1.9 m first reported from a sample of rows.
+
+## Animations
+
+`animations/export_anim.py` exports positions for the two outage runs;
+`render_lockout.py` and `render_threshold.py` draw the videos in
+`animations/`. See [`animations/README.md`](../animations/README.md) for
+commands and transcripts.

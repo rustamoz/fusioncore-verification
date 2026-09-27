@@ -152,6 +152,33 @@ The injected 200 s outage in the outage runs (t+106 to 306 s) ended with the
 first fix accepted and no rejections, unlike the same outage on the old
 harness in section 2 above, which was followed by 46.
 
+### The first fix after each gap (script: `scripts/animations/first_fix.py`)
+
+Error of the receiver's first fixes after each gap against RTK ground truth,
+and the filter's response. Times from the frozen outage run.
+
+| Gap | Length | First fixes, error vs truth | Filter response |
+|---|---|---|---|
+| Injected, outage runs | 200 s | 1.4 m | accepted (d2 7.3, 7.7); estimate corrected from 127–189 m to ~1 m |
+| t+2973 to 3137 s | 165 s | 33, 30, 27, 26 ... 4 m (steps of 1–3 m) | accepted; followed; no lockout |
+| t+3380 to 3493 s | 112 s | 157, 121, 84, 68, 64, 50 ... 5 m within ~4 s | accepted (d2 9.61 and 12.74, sigma 44.7 and 42.5 m); sigma to 3.06 m; lockout |
+| t+3713 to 3916 s | 203 s | 8, 12, 12, 13 m | rejected; estimate 388 m (frozen) and 495 m (active) off |
+| t+4927 to 5020 s | 93 s | ~150 m (first fixes with truth available) | frozen run accepted at d2 16.09; lockout of 155–300 fixes |
+
+At t+3493 the accepted fix moved the estimate from 34.6 m to 156.8 m from
+the truth in the active outage run (90.1 m to 157.1 m in the frozen run).
+
+Implied speed of that fix from the last accepted fix before the gap: 166 m
+in 112 s = 1.48 m/s. A 20 m/s pre-gate passes it.
+
+Dead-reckoning drift over the 243 s blind stretch t+3657 to 3900 s (truth
+displacement 94.9 m): active outage run 197.8 m, net heading off -148.3
+degrees; frozen outage run 170.0 m, off +140.4 degrees. Error vs truth over
+the same stretch: active 381 to 495 m, frozen 394 to 388 m.
+
+Estimate and GPS frames agree without any alignment: accepted fixes sit a
+median 0.64 m from the estimate in normal operation (bias +0.05, -0.01 m).
+
 ## 4. Claim two: the 23rd state (report section 4)
 
 Four runs of 2012-01-08 on the corrected harness, differing only in
