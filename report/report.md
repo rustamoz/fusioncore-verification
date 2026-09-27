@@ -39,13 +39,13 @@ That exhausted my hypotheses, so rather than keep guessing I ran a direct compar
 
 The repo ships the author's own filter output for a GPS-spike test on this sequence. Scoring his trajectory through my evaluation pipeline gave 4.25 m, with 73.8% of poses inside 5 m. My evaluator, my ground truth and my extraction scripts were therefore all fine. I then ran the identical spike test on my own build and compared the two trajectories pose by pose across 2,792 matched timestamps.
 
-They matched to between 0.0 and 1.9 m for the entire run, including through a deliberately injected 500 m GPS spike.
+They agreed to within 2.6 m for the entire run, and to 1.1 m on average, including through a deliberately injected 500 m GPS spike.
 
 My build reproduces the author's filter.
 
 What's left is limited to long runs and has a specific shape. Every full-length run develops one or two isolated excursions of a few hundred metres: 324 m at t+3911 s at 3× playback, and 600 m at t+4342 s when I re-ran at 1×. They're reproducible in the sense that they always happen, but the timestamp and the size move between runs, and they occur while GPS is present and reporting normal covariance. I couldn't explain them at this stage. They turned out to matter more than anything else in the project, and §5 shows what's behind them.
 
-That result changed how I ran everything afterwards. Full 90-minute sequences are contaminated as a primary metric on this hardware, but the repo includes injectors for GPS spikes and outages, and I'd just validated short runs against the author's own output to within 2 m. So injected-fault experiments became the main evidence, with full sequences kept as supporting material. A self-injected fault is known, repeatable and isolated, which makes it much easier to defend than an aggregate number over 90 minutes.
+That result changed how I ran everything afterwards. Full 90-minute sequences are contaminated as a primary metric on this hardware, but the repo includes injectors for GPS spikes and outages, and I'd just validated short runs against the author's own output to within 3 m. So injected-fault experiments became the main evidence, with full sequences kept as supporting material. A self-injected fault is known, repeatable and isolated, which makes it much easier to defend than an aggregate number over 90 minutes.
 
 ## 3. Claim One: The Velocity Pre-Gate
 
@@ -78,7 +78,9 @@ I scanned `gps.csv` for consecutive quality-3 fixes more than 300 m apart and co
 
 Not 3400. The paper is off by a factor of a thousand, which is what you get from dividing by 0.211 seconds instead of 211. At 3.4 m/s the fix passes a 20 m/s threshold easily.
 
-<!-- Figure: figures/fig_speedgate.png -->
+![Log-log scatter of every GPS fix-to-fix step on 2012-08-20, elapsed time against displacement, with a diagonal line for a 20 m/s speed threshold. The fix arriving after the 211-second blackout sits below the line; a genuine 823 m jump in 0.4 s sits far above it.](../figures/fig_speedgate.png)
+
+*Figure 1. A displacement-over-elapsed-time check cannot reject the fix that arrives after the 211-second blackout: it implies 3.4 m/s, well under a 20 m/s threshold. Because the limit grows with the gap, it permits 4.2 km of movement after 211 seconds.*
 
 I then looked at the rest of the cluster to see whether later fixes might still be catchable. Between t+3940 s and t+4010 s there are 234 quality-3 fixes. Step to step they move 0.2 to 6.3 m at intervals of about 0.2 s, giving implied speeds between 0.8 and 31 m/s. The cluster sits 700 m from the truth as a block, but looked at internally it's an ordinary GPS stream from a vehicle driving normally. In the whole window only one transition exceeds the threshold: an 823 m jump in 0.4 s at t+3984 s, which works out to 2051 m/s.
 
@@ -92,7 +94,9 @@ The test that actually mattered was a long blackout, since that's the condition 
 
 What happened next I misread at first. With no spike in the data, every fix arriving after the outage was genuine, and the chi-squared gate rejected the first 46 of them anyway, with Mahalanobis distances from 16.32 up to 122.7. None were rejected by my pre-gate. The filter had drifted during the outage, so correct fixes looked like outliers. It only accepted one when a fix scored 16.26, just under the 16.27 threshold. I took this as the gate holding up. It's actually a short version of the failure in §5: the gate refusing good GPS after a gap.
 
-<!-- Figure: figures/fig_blackout.png -->
+![Filter position uncertainty rising steadily through a 200-second injected GPS blackout, with the Mahalanobis distance of each GPS fix on a second axis. After the blackout a cluster of rejected fixes sits just above the gate threshold until one falls below it.](../figures/fig_blackout.png)
+
+*Figure 2. During a 200-second injected blackout the filter's position uncertainty grows from 1.4 m to 78.4 m. When GPS returns, the gate rejects 46 genuine fixes before one scores 16.26 against the 16.27 threshold.*
 
 The last test settled it. I re-ran the full 2012-08-20 sequence with the debug topics recorded, which capture the rejection reason and Mahalanobis distance for every single fix. Across the run:
 
@@ -134,7 +138,9 @@ The `robot_localization` EKF runs alongside FusionCore in every run and the abla
 | No outage | 66.5 m | 60.7 m |
 | 200 s outage | 294.6 m | 75.1 m |
 
-<!-- Figure: figures/fig_ablation_result.png -->
+![Grouped bar chart of trajectory error for the 23rd state active and frozen, with and without a 200-second outage, and a shaded band showing the untouched control filter at 253.8 to 254.6 m.](../figures/fig_ablation_result.png)
+
+*Figure 3. Freezing the 23rd state gave lower trajectory error with and without an outage: 60.7 m against 66.5 m, and 75.1 m against 294.6 m. The untouched `robot_localization` control scored within 0.8 m across all four runs, so the runs are comparable.*
 
 Freezing the state gave a lower error in both conditions: 9% lower without an outage and 75% lower with one.
 
@@ -189,7 +195,9 @@ The obvious question is whether those fixes were bad. I checked every fix agains
 | Active, outage | accepted | 4.0 m | 12.8 m |
 | | rejected, whole run | 3.2 m | 7.1 m |
 
-<!-- Figure: figures/fig_fix_accuracy.png -->
+![Two cumulative distribution plots of each GPS fix's error against RTK ground truth, split into fixes the gate accepted and fixes it rejected. The accepted and rejected curves lie close together in both runs.](../figures/fig_fix_accuracy.png)
+
+*Figure 4. The fixes the gate rejected were ordinary GPS, within a few metres of RTK ground truth, much like the ones it accepted. For scale, the corrupted fixes on 2012-08-20 were about 700 m off.*
 
 The rejected fixes were ordinary GPS, within a few metres of the truth. At the median they're slightly worse than the accepted ones in one run and better in the other, and at the 90th percentile they're better in both. For comparison, the corrupted fixes on 2012-08-20 were about 700 m off. The gate was throwing away good GPS.
 
@@ -204,7 +212,9 @@ Plotting the runs over time showed something the tables hadn't. 2012-01-08 has n
 | t+3700 to 3917 s | 217 s | 95–105 m | depends on the run, below |
 | t+4928 to 5021 s | 93 s | about 40 m | first fix accepted, then 155–300 rejections |
 
-<!-- Figure: figures/fig_lockout.png -->
+![Four stacked timelines, one per ablation run, showing filter position uncertainty on a log scale, rejected GPS fixes as red marks, and natural GPS gaps as grey bands. All four runs start rejecting fixes at the same moment; in one, the rejections continue to the end of the run.](../figures/fig_lockout.png)
+
+*Figure 5. Every run locks out of GPS just after the same natural gap in the data, ending at t+3492–3494 s. Three runs re-acquire GPS after the next gap. The active run with an outage never does, and rejects the last 7,340 fixes of the run.*
 
 Two things stand out. Gap length doesn't decide it: the 165-second gap caused no lockout, while the 112-second one caused the longest. And the lockout doesn't start when GPS comes back. The first fix after the gap is accepted, the filter's uncertainty collapses to a few metres, and within a second the gate starts rejecting the fixes that follow. My best guess is that a single position fix corrects where the filter thinks it is but not which way it thinks it's heading, so its prediction runs away from the next fixes while its uncertainty says it's confident. I didn't verify that; it would need the filter's heading compared against the ground-truth track at t+3494 s.
 
@@ -239,7 +249,9 @@ Deduplicating the recorded trajectories by timestamp showed how bad it was:
 | 2012-08-20 | 558,396 | 117,813 | 79% |
 | Ablation, first attempt | 242,195 | 11,995 | **95%** |
 
-<!-- Figure: figures/fig_duplicates.png -->
+![Bar chart of the percentage of recorded FusionCore poses carrying a duplicate timestamp, for four recordings before the harness fix and one after it.](../figures/fig_duplicates.png)
+
+*Figure 6. Share of recorded FusionCore poses carrying a duplicate timestamp: between 38% and 95% before the harness fixes, and none after.*
 
 The `robot_localization` recordings, checked the same way, had no duplicates at all.
 
@@ -299,7 +311,7 @@ Separately, the benchmark configuration sets the ground-constraint z-position si
 
 These are the things I couldn't explain or rule out. They limit what the rest of the report can claim.
 
-**Why the lockouts happen.** The lockouts start right after natural GPS gaps in the data, but not at the gaps themselves: GPS returns, the first fix is accepted, and the fixes after it are rejected. I didn't establish why. My best guess, that one position fix corrects position but not heading, is untested; comparing the filter's heading with the ground-truth track around t+3494 s would settle it. Gap length isn't the trigger, since a 165-second gap caused no lockout and a 112-second one caused the longest. I also don't know why the author's runs, which score 18.6 m on this sequence, apparently don't lock out. Before finding the lockout I had ruled out four other explanations for the excursions: playback timing, GPS coordinate conversion, ground-truth construction, and ARM64 numerical differences in the covariance repair path. Those still stand, and the build reproduces the author's own trajectory to within 1–2 m, so the difference lies in how the runs play out rather than in the build. Either way, the lockouts inflate every absolute error figure in this report, so none of my absolute figures should be compared against the paper's.
+**Why the lockouts happen.** The lockouts start right after natural GPS gaps in the data, but not at the gaps themselves: GPS returns, the first fix is accepted, and the fixes after it are rejected. I didn't establish why. My best guess, that one position fix corrects position but not heading, is untested; comparing the filter's heading with the ground-truth track around t+3494 s would settle it. Gap length isn't the trigger, since a 165-second gap caused no lockout and a 112-second one caused the longest. I also don't know why the author's runs, which score 18.6 m on this sequence, apparently don't lock out. Before finding the lockout I had ruled out four other explanations for the excursions: playback timing, GPS coordinate conversion, ground-truth construction, and ARM64 numerical differences in the covariance repair path. Those still stand, and the build reproduces the author's own trajectory to within 2.6 m, so the difference lies in how the runs play out rather than in the build. Either way, the lockouts inflate every absolute error figure in this report, so none of my absolute figures should be compared against the paper's.
 
 **The `robot_localization` baseline.** In every run I made, on both sequences, the EKF baseline scored five to twenty times worse than the author's published figures: around 254 m on 2012-01-08 where he reports 41 m, and 216 m on 2012-08-20 where he reports 10.6 m. It's very consistent, 253.8 to 254.6 m across the four ablation runs, which is what makes it useful as a control. But it also means something systematic differs between my setup and his, in a filter I never touched. I didn't investigate it, because it's outside both contributions and the control property was all I needed from it.
 

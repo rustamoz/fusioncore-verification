@@ -50,7 +50,7 @@ python3 tools/evaluate.py --gt gt.tum --fusioncore fc.tum --rl rl.tum \
 
 | Finding | Script |
 |---|---|
-| Build reproduces the author's filter to 1-2 m | `analysis/trajectory_agreement.py` |
+| Build reproduces the author's filter to within 2.6 m | `analysis/trajectory_agreement.py` |
 | Paper's implied-speed arithmetic is off by 1000x | `analysis/scan_gps_jumps.py` |
 | The adversarial cluster is internally smooth | `analysis/gps_cluster_window.py` |
 | Chi-squared gate rejects the corrupted cluster | `analysis/rejection_reasons.py`, `analysis/gnss_status_window.py` |
@@ -92,5 +92,10 @@ The CSVs are derived from NCLT and are gitignored.
 
 These scripts consolidate the one-off scripts used during the
 investigation, most of which were lost when the VM's `/tmp` was cleared.
-The logic is unchanged; paths became arguments. They should be re-run
-against the original bags to confirm they reproduce `results/`.
+The logic is unchanged; paths became arguments.
+
+Every script in `analysis/` has been re-run against the original bags and
+data and reproduces the figures in `results/`. Re-running
+`trajectory_agreement.py` on the full set of matched timestamps corrected
+one figure: the build agrees with the author's trajectory to within
+2.60 m (mean 1.09 m), not the 1.9 m first reported from a sample of rows.

@@ -2,8 +2,8 @@
 """Pose-by-pose distance between two TUM trajectories at matched timestamps.
 
 Build validation (report section 2): my spike-test output agreed with
-the author's shipped fusioncore_spike.tum to within 0.0-1.9 m across
-2,792 matched timestamps.
+the author's shipped fusioncore_spike.tum to within 2.60 m (mean 1.09 m)
+across 2,792 matched timestamps.
 
     python3 trajectory_agreement.py theirs.tum mine.tum
 """

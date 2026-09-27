@@ -22,7 +22,7 @@ uses evo). All FusionCore runs used 3x playback unless stated.
 |---|---|
 | Author's `fusioncore_spike.tum` scored through my pipeline | 4.253 m ATE 3D, 73.8% of poses within 5 m |
 | My spike-test output vs the author's, matched timestamps | 2,792 |
-| Pose-by-pose disagreement over the whole run | 0.0 to 1.9 m |
+| Pose-by-pose disagreement over the whole run | 0.00 to 2.60 m, mean 1.09 m |
 | My ground truth vs the author's shipped ground truth | identical to 6 d.p.; 11,679 vs 11,754 poses (75 outliers above 30 m/s removed by my converter) |
 
 ### Long-run excursions on the old harness
@@ -118,7 +118,7 @@ t+3492 (above), t+4125 (54 to 55), t+5022 (155 to 300; the active arm's
 longest). The active outage run has only the first three, because it never
 left the t+3492 episode.
 
-### Are the rejected fixes bad? (script: `fix_vs_truth.py`)
+### Are the rejected fixes bad? (script: `fix_vs_truth.py BAG gps_rtk.csv --window 3490 3716`)
 
 Error of each GNSS fix against the nearest RTK ground-truth fix within 1 s.
 
