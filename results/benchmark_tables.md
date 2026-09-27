@@ -108,7 +108,7 @@ Four ablation runs on 2012-01-08, corrected harness.
 
 | Run | Rejected overall | Longest episode | Rejections in it | Peak sigma |
 |---|---|---|---|---|
-| Active, no outage | 1,361 of 21,981 (6.2%) | t+3492 to 3714 s | 998 | 81.2 m |
+| Active, no outage | 1,361 of 21,981 (6.2%) | t+3494 to 3714 s | 998 | 81.2 m |
 | Frozen, no outage | 1,215 of 21,973 (5.5%) | t+3492 to 3712 s | 998 | 68.7 m |
 | Active, outage | 7,347 of 21,020 (35.0%) | t+3492 s to end of run | 7,340 | 209.0 m |
 | Frozen, outage | 1,352 of 21,023 (6.4%) | t+3493 to 3942 s | 1,115 | 97.5 m |
@@ -126,12 +126,31 @@ Error of each GNSS fix against the nearest RTK ground-truth fix within 1 s.
 |---|---|---|---|---|
 | Active, no outage | accepted | 18,975 / 20,620 | 3.5 m | 10.5 m |
 | | rejected, whole run | 1,063 / 1,361 | 4.3 m | 8.3 m |
-| | rejected, t+3492 to 3714 s | 762 / 998 | 4.8 m | 8.2 m |
+| | rejected, t+3494 to 3714 s | 762 / 998 | 4.8 m | 8.2 m |
 | Active, outage | accepted | 12,676 / 13,673 | 4.0 m | 12.8 m |
 | | rejected, whole run | 6,408 / 7,347 | 3.2 m | 7.1 m |
 
-The rejected fixes are as accurate as the accepted ones: the gate was
-rejecting good GPS.
+The rejected fixes are ordinary GPS, within a few metres of the truth:
+slightly worse than accepted fixes at the median in one run, better in the
+other, and better at the 90th percentile in both. The corrupted fixes on
+2012-08-20 were about 700 m off. The gate was rejecting good GPS.
+
+### Natural GPS gaps and what follows them (script: `figures/gps_gaps.py`)
+
+Gaps longer than 10 s between fixes. Two gaps are interrupted by a single
+rejected fix (at t+3421 and t+3714 s) and are listed merged. Times from the
+active no-outage run; the other runs agree to within 2 s.
+
+| Gap | Length | Sigma on return | What happens next |
+|---|---|---|---|
+| t+2974 to 3138 s | 165 s | 59.7 to 61.5 m | first fix accepted in all runs, no lockout |
+| t+3382 to 3494 s | 112 s | 42.2 to 44.7 m | first fix accepted in all runs, then the ~1,000-fix lockout |
+| t+3700 to 3917 s | 217 s | 95.4 to 105.3 m | no-outage runs: first fix accepted. Frozen outage: 117 rejected, accepted after 25.6 s. Active outage: never accepted |
+| t+4928 to 5021 s | 93 s | 39.0 to 40.3 m | first fix accepted, then 155 to 300 rejections (active outage run still locked out, sigma 183.4 m) |
+
+The injected 200 s outage in the outage runs (t+106 to 306 s) ended with the
+first fix accepted and no rejections, unlike the same outage on the old
+harness in section 2 above, which was followed by 46.
 
 ## 4. Claim two: the 23rd state (report section 4)
 

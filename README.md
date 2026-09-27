@@ -37,10 +37,20 @@ bad GPS. On this data it does the opposite. Once the filter's estimate
 drifts, the gate starts rejecting **good** fixes, the drift grows, and the
 gate keeps rejecting.
 
-Every full run I analysed locked out at the same point for around a
-thousand consecutive fixes. The rejected fixes were as close to RTK ground
-truth as the accepted ones (median 4.8 m against 3.5 m). One run never
-recovered, and refused GPS for the last 2,000 seconds of the sequence.
+Every full run I analysed locked out at the same point, just after a
+natural GPS gap in the data, for around a thousand consecutive fixes. The
+rejected fixes were ordinary GPS, within a few metres of RTK ground truth
+(median 4.8 m, against 3.5 m for accepted fixes), nothing like the ~700 m
+of a genuinely corrupted fix. One run never recovered, and refused GPS for
+the last 2,000 seconds of the sequence.
+
+![Lockout](figures/fig_lockout.png)
+
+The lockout doesn't start when GPS returns. The first returning fix is
+accepted, the filter's uncertainty collapses, and the gate then rejects the
+good fixes that follow.
+
+![Fix accuracy](figures/fig_fix_accuracy.png)
 
 This also explains the few-hundred-metre excursions that inflate every
 full-length run: they are what happens when a lockout ends and the
@@ -67,8 +77,6 @@ Escaping is knife-edge, so with one run per configuration this can't show
 whether the state *systematically* makes lockouts worse. What it does show
 is that the claimed improvement isn't supported.
 
-![Mechanism](figures/fig_ablation_mechanism.png)
-
 ## 4. The benchmark harness recorded mostly duplicates
 
 Between 38% and 95% of recorded odometry carried duplicate timestamps, the
@@ -91,8 +99,8 @@ which the paper does not state.
 
 ## Limits
 
-- What starts the lockout, and why the author's runs apparently don't
-  suffer it, is not established.
+- Why the fixes after a natural GPS gap get rejected, and why the
+  author's runs apparently don't lock out, are not established.
 - One sequence for the ablation, one run per configuration. Playback is
   deterministic, so repeats would be identical, but this does not
   generalise beyond that sequence.

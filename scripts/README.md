@@ -63,6 +63,7 @@ python3 tools/evaluate.py --gt gt.tum --fusioncore fc.tum --rl rl.tum \
 | The gate locks out: ~1,000 consecutive rejections in every run | `analysis/rejection_episodes.py` |
 | Rejected fixes are as accurate as accepted ones | `analysis/fix_vs_truth.py` |
 | Sigma grows 55x in a blackout; 46 good fixes rejected after | `analysis/coast_sigma.py` |
+| Lockouts follow natural GPS gaps, starting after an accepted fix | `figures/gps_gaps.py` |
 
 Scripts that read bags import `_bag.py` and need a sourced ROS 2
 environment with the FusionCore messages built. The rest need only Python.
@@ -74,13 +75,18 @@ Every script prints its usage with `--help`.
 | Figure | Script | Input |
 |---|---|---|
 | `fig_speedgate.png` | `figures/fig_speedgate.py DATA/2012-08-20/gps.csv` | raw GPS |
-| `fig_ablation_result.png`, `fig_ablation_mechanism.png` | `figures/fig_ablation.py` | values in the script |
-| `fig_duplicates.png` | `figures/fig_gate_and_dupes.py` | values in the script |
+| `fig_ablation_result.png` | `figures/fig_ablation.py` | values in the script |
+| `fig_duplicates.png` | `figures/fig_duplicates.py` | values in the script |
+| `fig_lockout.png`, `fig_fix_accuracy.png`, `fig_blackout.png` | `figures/fig_lockout.py`, `fig_fix_accuracy.py`, `fig_blackout.py` | CSVs from `figures/extract_figdata.py` |
 
-`fig_gate_and_dupes.py` also draws a covariance-versus-gate-margin figure.
-Its series are currently approximated from printed output and must be
-replaced with values extracted by `gnss_status_window.py` before that
-figure is published. It is not in `figures/` for that reason.
+The last three read small CSVs extracted from the bags:
+
+```
+python3 extract_figdata.py noout_ON noout_OFF out3_ON out3_OFF blackout_spike_ON \
+    --rtk 2012-01-08/gps_rtk.csv --out figdata
+```
+
+The CSVs are derived from NCLT and are gitignored.
 
 ## Provenance
 

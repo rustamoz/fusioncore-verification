@@ -90,7 +90,9 @@ The injected-fault tests showed the same thing from the other direction. A 500 m
 
 The test that actually mattered was a long blackout, since that's the condition the paper describes. I injected a 200-second outage from t=100 s. I also scheduled a spike for one second after GPS returned, but the injector times it from playback start and it didn't land in that window, so what this test actually measured was the gate after a long blackout. The covariance inflation is real and large: position sigma climbed from a median of 1.4 m before the outage to 78.4 m by the end of it, about 55 times larger.
 
-What happened next I misread at first. With no spike in the data, every fix arriving after the outage was genuine, and the chi-squared gate rejected the first 46 of them anyway, with Mahalanobis distances from 16.32 up to 122.7. None were rejected by my pre-gate. The filter had drifted during the outage, so correct fixes looked like outliers. It only accepted one when a fix scored 16.26, just under the 16.27 threshold. I took this as the gate holding up. It's actually a short example of the failure in §5.
+What happened next I misread at first. With no spike in the data, every fix arriving after the outage was genuine, and the chi-squared gate rejected the first 46 of them anyway, with Mahalanobis distances from 16.32 up to 122.7. None were rejected by my pre-gate. The filter had drifted during the outage, so correct fixes looked like outliers. It only accepted one when a fix scored 16.26, just under the 16.27 threshold. I took this as the gate holding up. It's actually a short version of the failure in §5: the gate refusing good GPS after a gap.
+
+<!-- Figure: figures/fig_blackout.png -->
 
 The last test settled it. I re-ran the full 2012-08-20 sequence with the debug topics recorded, which capture the rejection reason and Mahalanobis distance for every single fix. Across the run:
 
@@ -150,13 +152,11 @@ The shape of the trajectory showed what the damage looked like:
 | Active, no outage | 1.002 | 26.5 m | 9.1 m/km |
 | Frozen, no outage | 0.997 | 25.4 m | 8.3 m/km |
 
-<!-- Figure: figures/fig_ablation_mechanism.png -->
-
 Three runs get the total path length to within about 1.5% of the truth. The active arm with an outage comes up **12% short**. Its relative pose error over 10 m segments is the lowest of the four, so the problem isn't local. It's the accumulated distance that's wrong, and the drift rate is four times the others.
 
 That's also why the per-pose error plot for that run looks so much worse. SE(3) alignment can rotate and shift a trajectory but not rescale it, so there's no good fit for a path that's 12% short. The alignment compromises and spreads the mismatch across the whole run, putting hundreds of metres of error even on stretches where the filter was doing no worse than the others.
 
-That describes the damage but not where it came from. The cause turned out to be the GPS gate, and it's the subject of §5. In short: all four runs lose GPS at the same point, around t≈3492 s, when the gate starts rejecting good fixes. The frozen arm recovered after about 450 seconds. The active arm never did, and spent the last 2,000 seconds of the run refusing GPS. That's where the 294.6 m comes from. Not from the injected outage at t=120 s, which both arms recovered from, but from a lockout more than 3,000 seconds later. The gap without an outage follows the same pattern: the active arm's lockout at t≈5022 s lasted 300 rejections, against the frozen arm's 155.
+That describes the damage but not where it came from. The cause turned out to be the GPS gate, and it's the subject of §5. In short: every run locks out of GPS at the same point, just after a natural GPS gap in the data around t≈3492 s, and every run is still locked out when a longer natural gap begins at t+3700 s. When GPS returns after that gap, the frozen arm gets a fix accepted within 26 seconds. The active arm never does, and spends the last 2,000 seconds of the run refusing GPS. That's where the 294.6 m comes from. Not from the injected outage at t=120 s, which both arms came through cleanly, but from a lockout more than 3,000 seconds later. The gap without an outage follows the same pattern: after the last natural gap, at t≈5022 s, the active arm's lockout lasted 300 rejections against the frozen arm's 155.
 
 During the injected outage itself, the two arms' headings drifted about 37° apart, then came back together once GPS returned. Whatever lasting difference the outage left between them, it was small enough that their positions agreed to within 0.7 m straight afterwards.
 
@@ -172,12 +172,12 @@ While rechecking the figures in §3 against the filter's per-fix debug output, I
 
 | Run | Rejected overall | Longest episode | Rejections in it | Peak sigma | Largest jump |
 |---|---|---|---|---|---|
-| Active, no outage | 1,361 (6.2%) | t+3492 to 3714 s | 998 | 81.2 m | 373 m at t+3917 s |
+| Active, no outage | 1,361 (6.2%) | t+3494 to 3714 s | 998 | 81.2 m | 373 m at t+3917 s |
 | Frozen, no outage | 1,215 (5.5%) | t+3492 to 3712 s | 998 | 68.7 m | 343 m at t+3916 s |
 | Active, outage | 7,347 (35.0%) | t+3492 s to end | 7,340 | 209.0 m | never recovered |
 | Frozen, outage | 1,352 (6.4%) | t+3493 to 3942 s | 1,115 | 97.5 m | 387 m at t+3942 s |
 
-Every run starts rejecting at the same point, around t≈3492 s, so this is a property of the sequence and the filter, not of the ablation. Smaller episodes at t≈4125 s and t≈5022 s also appear in all four.
+Every run starts rejecting at the same point, t+3492–3494 s, so this is a property of the sequence and the filter, not of the ablation. Smaller episodes at t≈4125 s and t≈5022 s also appear in all four.
 
 The obvious question is whether those fixes were bad. I checked every fix against the RTK ground truth:
 
@@ -185,19 +185,42 @@ The obvious question is whether those fixes were bad. I checked every fix agains
 |---|---|---|---|
 | Active, no outage | accepted | 3.5 m | 10.5 m |
 | | rejected, whole run | 4.3 m | 8.3 m |
-| | rejected, t+3492 to 3714 s | 4.8 m | 8.2 m |
+| | rejected, t+3494 to 3714 s | 4.8 m | 8.2 m |
 | Active, outage | accepted | 4.0 m | 12.8 m |
 | | rejected, whole run | 3.2 m | 7.1 m |
 
-The rejected fixes are as close to the truth as the accepted ones, and in the run that never recovered, closer. The gate was throwing away good GPS.
+<!-- Figure: figures/fig_fix_accuracy.png -->
 
-This is a **lockout**, and it's the reverse of the failure the paper describes. Once the filter's estimate has drifted further from the truth than the gate allows, every correct fix looks like an outlier. The gate then refuses the only information that could correct the drift, so the drift keeps growing. The only way out is for the covariance to grow until the gate is wide enough to let a fix through, and that's a knife-edge: in the injected-blackout test in §3, the lockout ended when one fix scored 16.26 against a threshold of 16.27. When a run does escape, the estimate snaps back all at once. In the frozen outage run, the episode ends at t+3942 s and the run's largest position jump, 387 m, is also at t+3942 s. In the no-outage runs the largest jumps come at t+3916–3917 s, about 200 seconds after the last rejection, and I didn't establish what happens in between.
+The rejected fixes were ordinary GPS, within a few metres of the truth. At the median they're slightly worse than the accepted ones in one run and better in the other, and at the 90th percentile they're better in both. For comparison, the corrupted fixes on 2012-08-20 were about 700 m off. The gate was throwing away good GPS.
 
-This largely explains the long-run excursions I couldn't account for in §2. I had checked the GPS in a five-second window around one of the jumps, seen healthy fixes and normal covariance, and concluded the GPS wasn't involved. It was. The fixes were healthy and the filter was refusing them. The 324 m and 600 m excursions from my earlier runs look like the same thing, but those recordings no longer exist, so I couldn't confirm it.
+### Where the lockouts come from
+
+Plotting the runs over time showed something the tables hadn't. 2012-01-08 has natural GPS gaps of its own, stretches where the receiver produced no usable fixes, and they're identical in every run:
+
+| Natural gap | Length | Sigma when GPS returns | What happens next |
+|---|---|---|---|
+| t+2974 to 3138 s | 165 s | about 60 m | first fix accepted, no lockout |
+| t+3382 to 3494 s | 112 s | about 43 m | first fix accepted, then about 1,000 rejections |
+| t+3700 to 3917 s | 217 s | 95–105 m | depends on the run, below |
+| t+4928 to 5021 s | 93 s | about 40 m | first fix accepted, then 155–300 rejections |
+
+<!-- Figure: figures/fig_lockout.png -->
+
+Two things stand out. Gap length doesn't decide it: the 165-second gap caused no lockout, while the 112-second one caused the longest. And the lockout doesn't start when GPS comes back. The first fix after the gap is accepted, the filter's uncertainty collapses to a few metres, and within a second the gate starts rejecting the fixes that follow. My best guess is that a single position fix corrects where the filter thinks it is but not which way it thinks it's heading, so its prediction runs away from the next fixes while its uncertainty says it's confident. I didn't verify that; it would need the filter's heading compared against the ground-truth track at t+3494 s.
+
+Once a lockout starts, it feeds itself. Every correct fix looks like an outlier, so the gate refuses the only information that could correct the drift, and the drift keeps growing. The way out is for the uncertainty to grow until the gate is wide enough to let a fix through, and that's a knife-edge: in the injected-blackout test in §3, it ended when one fix scored 16.26 against a threshold of 16.27. How a gap ends is sensitive in the same way. The injected 200-second outage in §3 was followed by 46 rejections, but the same outage in the four ablation runs ended with the first fix accepted and none at all.
+
+The third gap is where the runs part ways. It begins in the middle of the lockout, at t+3700 s, so every run enters it already locked out, and when GPS returns about 215 seconds later the uncertainty is around 95–105 m in all of them. After that:
+
+- both no-outage runs accept the first fix and snap back, which is their largest position jump of the run (343–373 m at t+3916–3917 s);
+- the frozen outage run rejects 117 more fixes, accepts one 26 seconds later at t+3942 s, and snaps back 387 m;
+- the active outage run never accepts another fix. It refuses the rest of the sequence, 7,340 fixes in a row, while its uncertainty climbs past 200 m.
+
+This explains the long-run excursions I couldn't account for in §2. I had checked the GPS in a five-second window around one of the jumps, seen healthy fixes and normal covariance, and concluded GPS wasn't involved. It was: the jump is the moment the filter finally accepted GPS after minutes of refusing it. The 324 m and 600 m excursions from my earlier runs look like the same thing, but those recordings no longer exist, so I couldn't confirm it.
 
 It also changes how §3 should be read. The paper worries about a blackout blinding the gate so that it accepts bad GPS. On this data the gate rejected the bad GPS correctly. Its real problem was the opposite: rejecting good GPS for minutes at a time, and in one run for the whole last third of the sequence.
 
-What I didn't find is what starts the lockout at t≈3492 s, or why the author's own runs, which score 18.6 m on this sequence, apparently don't suffer it. Both are in §8.
+What I didn't find is why the fixes that follow an accepted one get rejected, or why the author's own runs, which score 18.6 m on this sequence, apparently don't lock out. Both are in §8.
 
 ## 6. Reproducibility Defects in the Benchmark Harness
 
@@ -276,7 +299,7 @@ Separately, the benchmark configuration sets the ground-constraint z-position si
 
 These are the things I couldn't explain or rule out. They limit what the rest of the report can claim.
 
-**What starts the lockout.** All four ablation runs begin rejecting good GPS at about t≈3492 s. I didn't establish what pushes the estimate far enough from the truth at that point, or what happens in the roughly 200 seconds between the last rejection and the largest jump in the no-outage runs. The author's result on this sequence, 18.6 m, suggests his runs don't lock out, and I don't know why. Before I found the lockout I had ruled out four other explanations for the excursions: playback timing, GPS coordinate conversion, ground-truth construction, and ARM64 numerical differences in the covariance repair path. Those still stand, and the build reproduces the author's own trajectory to within 1–2 m, so the difference lies in how the runs play out rather than in the build. Either way, the lockouts inflate every absolute error figure in this report, so none of my absolute figures should be compared against the paper's.
+**Why the lockouts happen.** The lockouts start right after natural GPS gaps in the data, but not at the gaps themselves: GPS returns, the first fix is accepted, and the fixes after it are rejected. I didn't establish why. My best guess, that one position fix corrects position but not heading, is untested; comparing the filter's heading with the ground-truth track around t+3494 s would settle it. Gap length isn't the trigger, since a 165-second gap caused no lockout and a 112-second one caused the longest. I also don't know why the author's runs, which score 18.6 m on this sequence, apparently don't lock out. Before finding the lockout I had ruled out four other explanations for the excursions: playback timing, GPS coordinate conversion, ground-truth construction, and ARM64 numerical differences in the covariance repair path. Those still stand, and the build reproduces the author's own trajectory to within 1–2 m, so the difference lies in how the runs play out rather than in the build. Either way, the lockouts inflate every absolute error figure in this report, so none of my absolute figures should be compared against the paper's.
 
 **The `robot_localization` baseline.** In every run I made, on both sequences, the EKF baseline scored five to twenty times worse than the author's published figures: around 254 m on 2012-01-08 where he reports 41 m, and 216 m on 2012-08-20 where he reports 10.6 m. It's very consistent, 253.8 to 254.6 m across the four ablation runs, which is what makes it useful as a control. But it also means something systematic differs between my setup and his, in a filter I never touched. I didn't investigate it, because it's outside both contributions and the control property was all I needed from it.
 
@@ -296,7 +319,7 @@ The proposed velocity pre-gate has no target on the sequence it was designed for
 
 The 23rd state didn't improve accuracy in any condition I tested. Freezing it gave a lower trajectory error both with GPS available (9%) and across a 200-second outage (75%). But both differences come down to how long each run was locked out of GPS, and escaping a lockout is knife-edge, so I can't say whether the state makes it systematically worse. What I can say is that the paper's claimed improvement isn't supported.
 
-The paper's account of the failure mechanism is half right, and the half that's wrong is the most interesting result here. Covariance growth during a blackout is real: position sigma reached 78.4 m against a normal 1.4 m. But it didn't blind the gate to bad GPS. With sigma at 63–68 m, the gate still rejected the corrupted cluster at four to five times its threshold. The failure the filter actually shows is the reverse. Once its estimate drifts, the gate rejects good GPS, the drift grows, and the gate keeps rejecting. Every full run I analysed locked out at the same point for around a thousand fixes, and one never recovered. On this data, the real risk is a filter that trusts its own estimate too much, not one that trusts GPS too much.
+The paper's account of the failure mechanism is half right, and the half that's wrong is the most interesting result here. Covariance growth during a blackout is real: position sigma reached 78.4 m against a normal 1.4 m. But it didn't blind the gate to bad GPS. With sigma at 63–68 m, the gate still rejected the corrupted cluster at four to five times its threshold. The failure the filter actually shows is the reverse. After natural GPS gaps in the data, it accepts one returning fix and then rejects the good fixes that follow, and once that starts it feeds itself: the drift grows and the gate keeps rejecting. Every full run I analysed locked out at the same point for around a thousand fixes, and one never recovered. On this data, the real risk is a filter that trusts its own estimate too much, not one that trusts GPS too much.
 
 Along the way I fixed three defects in the benchmark harness, plus a fourth they were hiding. Recorded odometry was between 38% and 95% duplicate timestamps, the player never exited, and the launch never shut down. Those recordings are malformed, although the published error figures don't depend on it.
 
