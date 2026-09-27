@@ -1,0 +1,47 @@
+From 0ae03422e0a0020827ba6f1bdc2b68f69ee4c3ef Mon Sep 17 00:00:00 2001
+From: Rustam <rustam.ozodkhon@gmail.com>
+Date: Sun, 27 Sep 2026 16:03:26 +0500
+Subject: [PATCH 6/7] config: default both experimental features to upstream
+ behaviour
+
+The implied-speed pre-gate now defaults to disabled (0.0) in the core
+config struct, the ROS parameter declaration, and the NCLT benchmark
+YAML. The B_EWZ ablation scale defaults to 1.0 (state active).
+
+Without this, anyone using this fork would get the pre-gate enabled
+at 20 m/s by default, and the NCLT config would ship with the 23rd
+state frozen. Both features are opt-in for experiments.
+---
+ fusioncore_core/include/fusioncore/fusioncore.hpp | 2 +-
+ fusioncore_ros/src/fusion_node.cpp                | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fusioncore_core/include/fusioncore/fusioncore.hpp b/fusioncore_core/include/fusioncore/fusioncore.hpp
+index c99b781..a98c7c0 100644
+--- a/fusioncore_core/include/fusioncore/fusioncore.hpp
++++ b/fusioncore_core/include/fusioncore/fusioncore.hpp
+@@ -204,7 +204,7 @@ struct FusionCoreConfig {
+   //Physics pre-gate: reject GNSS fixess implying a speed above this (m/s).
+   // Applied before the chi-squared gate, which goes blind when P is inflated
+   // after a blackout. 0.0 = disabled.
+-  double gnss_max_implied_speed = 20.0;
++  double gnss_max_implied_speed = 0.0;
+ 
+   // B_EWZ ablation: 1.0 = normal, 0.0 = state frozen at init value (0).
+   double encoder_wz_bias_noise_scale = 1.0;
+diff --git a/fusioncore_ros/src/fusion_node.cpp b/fusioncore_ros/src/fusion_node.cpp
+index 4d043b9..b0b583d 100644
+--- a/fusioncore_ros/src/fusion_node.cpp
++++ b/fusioncore_ros/src/fusion_node.cpp
+@@ -226,7 +226,7 @@ public:
+     declare_parameter("gnss.coast_imu_wz_scale",    1.0);
+     declare_parameter("gnss.recovery_rejection_n",  0);
+     declare_parameter("gnss.p_inflate_sigma",       50.0);
+-    declare_parameter("gnss.max_implied_speed",     20.0);
++    declare_parameter("gnss.max_implied_speed",     0.0);
+     declare_parameter("ukf.encoder_wz_bias_noise_scale", 1.0);
+     declare_parameter("gnss.recovery_timeout_s",    0.0);
+     declare_parameter("gnss.track_heading_enabled",   true);
+-- 
+2.50.1 (Apple Git-155)
+

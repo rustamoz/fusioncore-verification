@@ -1,0 +1,12 @@
+# data derived from NCLT (Open Database License): never commit
+*.mcap
+*.db3
+*.tum
+*.csv
+*.tar.gz
+eval*/
+# python
+__pycache__/
+*.pyc
+# os
+.DS_Store

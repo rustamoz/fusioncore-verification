@@ -1,0 +1,115 @@
+From b97fc7f7d439e0342cf29fadf18936a791fd0b51 Mon Sep 17 00:00:00 2001
+From: Rustam <rustam.ozodkhon@gmail.com>
+Date: Tue, 28 Jul 2026 05:26:43 +0500
+Subject: [PATCH 2/7] test(gnss): pre-gate rejects implausible speed, passes
+ normal speed
+
+---
+ fusioncore_core/tests/test_gnss_manager.cpp   | 54 +++++++++++++++++++
+ .../config/nclt_fusioncore.yaml               |  1 +
+ .../launch/nclt_benchmark.launch.py           |  2 +
+ fusioncore_ros/src/fusion_node.cpp            |  1 +
+ 4 files changed, 58 insertions(+)
+
+diff --git a/fusioncore_core/tests/test_gnss_manager.cpp b/fusioncore_core/tests/test_gnss_manager.cpp
+index 223e9db..8963a0a 100644
+--- a/fusioncore_core/tests/test_gnss_manager.cpp
++++ b/fusioncore_core/tests/test_gnss_manager.cpp
+@@ -586,3 +586,57 @@ int main(int argc, char** argv) {
+   ::testing::InitGoogleTest(&argc, argv);
+   return RUN_ALL_TESTS();
+ }
++// ─── Physics pre-gate: implausible speed ────────────────────────────────
++// The pre-gate runs upstream of the chi-squared gate. It compares the
++// displacement from the last accepted fix against elapsed time and rejects
++// any fix implying a speed above gnss_max_implied_speed.
++TEST(GNSSPreGateTest, ImpossibleSpeedIsRejected) {
++  FusionCoreConfig cfg;
++  cfg.gnss_max_implied_speed = 20.0;
++  FusionCore fc(cfg);
++  State initial;
++  initial.x = StateVector::Zero();
++  initial.P = StateMatrix::Identity() * 0.1;
++  fc.init(initial, 0.0);
++
++  GnssFix first;
++  first.fix_type   = GnssFixType::GPS_FIX;
++  first.satellites = 8;
++  first.hdop       = 1.2;
++  first.vdop       = 1.8;
++  first.x = 0.0; first.y = 0.0; first.z = 0.0;
++  ASSERT_TRUE(fc.update_gnss(1.0, first));
++
++  // 700 m in 0.2 s = 3500 m/s. Physically impossible for a ground robot.
++  GnssFix teleport = first;
++  teleport.x = 700.0;
++  EXPECT_FALSE(fc.update_gnss(1.2, teleport));
++  EXPECT_EQ(fc.get_gnss_debug().reason,
++            GnssRejectionReason::SPEED_IMPLAUSIBLE);
++}
++
++// ─── Physics pre-gate: plausible speed passes ───────────────────────────
++TEST(GNSSPreGateTest, PlausibleSpeedIsAccepted) {
++  FusionCoreConfig cfg;
++  cfg.gnss_max_implied_speed = 20.0;
++  FusionCore fc(cfg);
++  State initial;
++  initial.x = StateVector::Zero();
++  initial.P = StateMatrix::Identity() * 0.1;
++  fc.init(initial, 0.0);
++
++  GnssFix first;
++  first.fix_type   = GnssFixType::GPS_FIX;
++  first.satellites = 8;
++  first.hdop       = 1.2;
++  first.vdop       = 1.8;
++  first.x = 0.0; first.y = 0.0; first.z = 0.0;
++  ASSERT_TRUE(fc.update_gnss(1.0, first));
++
++  // 0.3 m in 0.2 s = 1.5 m/s. Normal Segway speed.
++  GnssFix normal = first;
++  normal.x = 0.3;
++  fc.update_gnss(1.2, normal);
++  EXPECT_NE(fc.get_gnss_debug().reason,
++            GnssRejectionReason::SPEED_IMPLAUSIBLE);
++}
+diff --git a/fusioncore_datasets/config/nclt_fusioncore.yaml b/fusioncore_datasets/config/nclt_fusioncore.yaml
+index 836d692..e580546 100644
+--- a/fusioncore_datasets/config/nclt_fusioncore.yaml
++++ b/fusioncore_datasets/config/nclt_fusioncore.yaml
+@@ -49,6 +49,7 @@ fusioncore:
+     gnss.coast_imu_wz_scale: 500.0  # inflate R_imu[WZ] during coast: encoder WZ dominates heading, not the gyro whose Q_bias is inflated 100x
+     gnss.recovery_rejection_n: 0    # disabled: P inflation via recovery mode was causing outlier acceptance
+     gnss.p_inflate_sigma: 50.0      # unused (recovery_rejection_n=0)
++    gnss.max_implied_speed: 0.0    # physics pre-gate; 0.0 disables
+     gnss.recovery_timeout_s: 0.0    # disabled: chi2 gate with coast_q_factor=10 handles GPS recovery correctly
+ 
+     adaptive.imu: true
+diff --git a/fusioncore_datasets/launch/nclt_benchmark.launch.py b/fusioncore_datasets/launch/nclt_benchmark.launch.py
+index ea1fdde..76bffd1 100644
+--- a/fusioncore_datasets/launch/nclt_benchmark.launch.py
++++ b/fusioncore_datasets/launch/nclt_benchmark.launch.py
+@@ -184,6 +184,8 @@ def generate_launch_description():
+                     'ros2', 'bag', 'record',
+                     '-o', output_bag,
+                     '/fusion/odom',
++		    '/fusion/debug/gnss_status',
++		    '/fusion/debug/filter_health',
+                     '/rl/odometry',
+                     '/gnss/fix',
+                     '/clock',
+diff --git a/fusioncore_ros/src/fusion_node.cpp b/fusioncore_ros/src/fusion_node.cpp
+index 91f6e58..4f36fe1 100644
+--- a/fusioncore_ros/src/fusion_node.cpp
++++ b/fusioncore_ros/src/fusion_node.cpp
+@@ -2260,6 +2260,7 @@ private:
+       case fusioncore::GnssRejectionReason::VDOP_HIGH:       return "VDOP_HIGH";
+       case fusioncore::GnssRejectionReason::MIN_SATS:        return "MIN_SATS";
+       case fusioncore::GnssRejectionReason::CHI2_FAILED:     return "CHI2_FAILED";
++      case fusioncore::GnssRejectionReason::SPEED_IMPLAUSIBLE: return "SPEED_IMPLAUSIBLE";
+       case fusioncore::GnssRejectionReason::DELAY_TOO_LARGE: return "DELAY_TOO_LARGE";
+       default:                                                return "NOT_PROCESSED";
+     }
+-- 
+2.50.1 (Apple Git-155)
+

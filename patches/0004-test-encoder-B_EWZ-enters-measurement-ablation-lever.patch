@@ -1,0 +1,68 @@
+From 6515fa9e87ac7a69f2b12738f8bd96289a5dd988 Mon Sep 17 00:00:00 2001
+From: Rustam <rustam.ozodkhon@gmail.com>
+Date: Tue, 28 Jul 2026 07:29:23 +0500
+Subject: [PATCH 4/7] test(encoder): B_EWZ enters measurement; ablation lever
+ freezes its variance
+
+---
+ fusioncore_core/tests/test_encoder.cpp | 47 ++++++++++++++++++++++++++
+ 1 file changed, 47 insertions(+)
+
+diff --git a/fusioncore_core/tests/test_encoder.cpp b/fusioncore_core/tests/test_encoder.cpp
+index ef43db3..c6ad78d 100644
+--- a/fusioncore_core/tests/test_encoder.cpp
++++ b/fusioncore_core/tests/test_encoder.cpp
+@@ -138,3 +138,50 @@ int main(int argc, char** argv) {
+   ::testing::InitGoogleTest(&argc, argv);
+   return RUN_ALL_TESTS();
+ }
++
++// ─── B_EWZ enters the encoder measurement (repo had no such test) ───────
++// The 23rd state is the paper's only genuinely novel contribution, but no
++// existing test exercises it with a non-zero value: tests 1 and 2 both leave
++// B_EWZ at zero, so the term is never observed.
++//
++// NOTE ON SIGN: the code ADDS the bias (z[2] = WZ + B_EWZ), mirroring the
++// IMU convention in the paper's eq. 11 (omega + b_g). The paper's eq. 13
++// states h_enc = [vx, vy, wz - b_ewz], which contradicts its own eq. 11.
++// This test pins the implemented convention.
++TEST(EncoderTest, EncoderWzBiasEntersMeasurement) {
++  StateVector x = StateVector::Zero();
++  x[WZ]     = 0.40;
++  x[B_EWZ]  = 0.05;
++  EncoderMeasurement z = encoder_measurement_function(x);
++  EXPECT_DOUBLE_EQ(z[2], 0.45);   // WZ + B_EWZ, not WZ - B_EWZ
++  EXPECT_NE(z[2], 0.35);          // explicitly not the paper's eq. 13
++}
++
++// ─── Ablation lever freezes B_EWZ without changing filter dimension ─────
++// Scale 0.0 zeroes Q[B_EWZ,B_EWZ], so the state cannot accumulate process
++// noise and stays at its initialised value. STATE_DIM remains 23, so sigma
++// point count and every matrix dimension are unchanged: the only difference
++// between the two configurations is the 23rd state's ability to adapt.
++TEST(EncoderTest, AblationLeverFreezesEncoderWzBiasVariance) {
++  UKFParams p;
++  State init;
++  init.x = StateVector::Zero();
++  init.P = StateMatrix::Identity() * 0.1;
++
++  UKF active(p);
++  active.init(init);
++  UKF frozen(p);
++  frozen.set_encoder_wz_bias_noise_scale(0.0);
++  frozen.init(init);
++
++  for (int i = 0; i < 50; ++i) {
++    active.predict(0.01);
++    frozen.predict(0.01);
++  }
++
++  double var_active = active.state().P(B_EWZ, B_EWZ);
++  double var_frozen = frozen.state().P(B_EWZ, B_EWZ);
++
++  EXPECT_GT(var_active, var_frozen);   // active accumulates process noise
++  EXPECT_EQ(STATE_DIM, 23);            // dimension unchanged by the ablation
++}
+-- 
+2.50.1 (Apple Git-155)
+

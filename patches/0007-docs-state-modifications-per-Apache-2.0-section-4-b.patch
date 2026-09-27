@@ -1,0 +1,69 @@
+From 2f755b398995f19f3fe58420d9047a7d50b0b7b6 Mon Sep 17 00:00:00 2001
+From: rustamoz <rustam.ozodkhon@gmail.com>
+Date: Sun, 27 Sep 2026 12:14:44 +0100
+Subject: [PATCH 7/7] docs: state modifications per Apache 2.0 section 4(b)
+
+---
+ NOTICE.md | 50 ++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 50 insertions(+)
+ create mode 100644 NOTICE.md
+
+diff --git a/NOTICE.md b/NOTICE.md
+new file mode 100644
+index 0000000..13f40ac
+--- /dev/null
++++ b/NOTICE.md
+@@ -0,0 +1,50 @@
++# Modifications
++
++This is a fork of FusionCore by Manan Kharwar
++(https://github.com/manankharwar/fusioncore), released under the
++Apache License 2.0. The upstream LICENSE file is retained unchanged.
++
++Modified by Rustam, 2026, for an independent evaluation of the claims
++in arXiv:2605.25239. All changes are on branch `verification`, based
++on upstream commit 99503ca.
++
++## Files changed
++
++- `fusioncore_core/include/fusioncore/fusioncore.hpp`
++  Added the SPEED_IMPLAUSIBLE rejection reason and the
++  gnss_max_implied_speed configuration field.
++- `fusioncore_core/src/fusioncore.cpp`
++  Added an implied-speed pre-gate in update_gnss(), upstream of the
++  chi-squared gate. Applied the B_EWZ noise scale in the constructor.
++- `fusioncore_core/include/fusioncore/ukf.hpp`,
++  `fusioncore_core/src/ukf.cpp`
++  Added set_encoder_wz_bias_noise_scale() and applied it to
++  Q[B_EWZ,B_EWZ] in predict(), mirroring the existing position and
++  gyro-bias noise scales.
++- `fusioncore_ros/src/fusion_node.cpp`
++  Parameter plumbing for both features. Added a guard in
++  publish_state() that suppresses publishes when the clock has not
++  advanced since the previous one.
++- `fusioncore_datasets/scripts/nclt_player.py`
++  Stop the executor at the end of playback; guard the second
++  rclpy.shutdown() call.
++- `fusioncore_datasets/launch/nclt_benchmark.launch.py`
++  Added an OnProcessExit handler so the stack shuts down when
++  playback ends. Added the two debug topics to the recorded list.
++- `fusioncore_datasets/config/nclt_fusioncore.yaml`
++  Added parameters for both features.
++- `fusioncore_core/tests/test_gnss_manager.cpp`,
++  `fusioncore_core/tests/test_encoder.cpp`
++  Four new unit tests.
++
++## Defaults
++
++Both experimental features default to upstream behaviour: the
++pre-gate is disabled (0.0) and the B_EWZ state is active (1.0).
++They must be enabled explicitly for experiments.
++
++## Data
++
++Evaluation used the University of Michigan NCLT dataset
++(Carlevaris-Bianco, Ushani and Eustice, IJRR 2016), released under
++the Open Database License. No dataset files are redistributed here.
+-- 
+2.50.1 (Apple Git-155)
+

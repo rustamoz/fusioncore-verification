@@ -1,0 +1,87 @@
+# Scripts
+
+## Setup
+
+The analysis runs on Ubuntu 24.04 with ROS 2 Jazzy, using the modified
+FusionCore on branch `verification` of
+https://github.com/rustamoz/fusioncore.
+
+1. Build FusionCore **including** the datasets package. The upstream build
+   command `--packages-up-to fusioncore_ros` omits it:
+   ```
+   colcon build --packages-up-to fusioncore_ros
+   colcon build --packages-select fusioncore_datasets
+   ```
+2. Download the per-date sensor bundle from
+   https://robots.engin.umich.edu/nclt/ (for example
+   `2012-01-08_sen.tar.gz`, 114 MB) and unpack it. The LiDAR and image
+   bundles are not needed.
+3. Install evo: `pip install evo --break-system-packages`
+
+## Producing a run
+
+```
+ros2 launch fusioncore_datasets nclt_benchmark.launch.py \
+  data_dir:=/path/to/2012-01-08 \
+  output_bag:=/path/to/run \
+  playback_rate:=3.0
+```
+
+Add `gps_outage_start_s:=120.0 gps_outage_duration_s:=200.0` for the
+injected blackout. The ablation is switched with
+`ukf.encoder_wz_bias_noise_scale` and the pre-gate with
+`gnss.max_implied_speed`, both in `config/nclt_fusioncore.yaml`. The
+datasets package must be rebuilt after editing that file, since it is read
+from the install tree.
+
+On the corrected branch the stack shuts itself down when playback ends.
+
+Extract trajectories and score them with the tools shipped in FusionCore:
+
+```
+python3 tools/nclt_rtk_to_tum.py --rtk DATA/gps_rtk.csv --out gt.tum
+python3 tools/odom_to_tum.py --bag RUN --topic /fusion/odom --out fc.tum
+python3 tools/odom_to_tum.py --bag RUN --topic /rl/odometry --out rl.tum
+python3 tools/evaluate.py --gt gt.tum --fusioncore fc.tum --rl rl.tum \
+  --sequence 2012-01-08 --out_dir eval
+```
+
+## Which script supports which finding
+
+| Finding | Script |
+|---|---|
+| Build reproduces the author's filter to 1-2 m | `analysis/trajectory_agreement.py` |
+| Paper's implied-speed arithmetic is off by 1000x | `analysis/scan_gps_jumps.py` |
+| The adversarial cluster is internally smooth | `analysis/gps_cluster_window.py` |
+| Chi-squared gate rejects the whole cluster | `analysis/rejection_reasons.py`, `analysis/gnss_status_window.py` |
+| Injected outage landed where intended | `analysis/outage_gaps.py` |
+| Every run initialised at the origin | `analysis/first_pose.py` |
+| Health metrics do not separate the ablation arms | `analysis/filter_health_window.py` |
+| Heading and position divergence between arms | `analysis/compare_arms.py` |
+| Long-run excursion vs outage re-anchoring | `analysis/largest_jump.py` |
+| Duplicate timestamps in recordings | `analysis/dedup.py` |
+
+Scripts that read bags import `_bag.py` and need a sourced ROS 2
+environment with the FusionCore messages built. The rest need only Python.
+
+Every script prints its usage with `--help`.
+
+## Figures
+
+| Figure | Script | Input |
+|---|---|---|
+| `fig_speedgate.png` | `figures/fig_speedgate.py DATA/2012-08-20/gps.csv` | raw GPS |
+| `fig_ablation_result.png`, `fig_ablation_mechanism.png` | `figures/fig_ablation.py` | values in the script |
+| `fig_duplicates.png` | `figures/fig_gate_and_dupes.py` | values in the script |
+
+`fig_gate_and_dupes.py` also draws a covariance-versus-gate-margin figure.
+Its series are currently approximated from printed output and must be
+replaced with values extracted by `gnss_status_window.py` before that
+figure is published. It is not in `figures/` for that reason.
+
+## Provenance
+
+These scripts consolidate the one-off scripts used during the
+investigation, most of which were lost when the VM's `/tmp` was cleared.
+The logic is unchanged; paths became arguments. They should be re-run
+against the original bags to confirm they reproduce `results/`.

@@ -1,0 +1,95 @@
+From 3243085c8c6485f53010e6a31b400d225082b014 Mon Sep 17 00:00:00 2001
+From: Rustam <rustam.ozodkhon@gmail.com>
+Date: Tue, 28 Jul 2026 03:36:10 +0500
+Subject: [PATCH 1/7] feat(gnss): add implied-speed pre-gate upstream of
+ chi-squared
+
+---
+ .../include/fusioncore/fusioncore.hpp         |  7 +++++-
+ fusioncore_core/src/fusioncore.cpp            | 24 +++++++++++++++++++
+ fusioncore_ros/src/fusion_node.cpp            |  2 ++
+ 3 files changed, 32 insertions(+), 1 deletion(-)
+
+diff --git a/fusioncore_core/include/fusioncore/fusioncore.hpp b/fusioncore_core/include/fusioncore/fusioncore.hpp
+index d240c49..2f25ac4 100644
+--- a/fusioncore_core/include/fusioncore/fusioncore.hpp
++++ b/fusioncore_core/include/fusioncore/fusioncore.hpp
+@@ -201,7 +201,11 @@ struct FusionCoreConfig {
+   int    gnss_recovery_rejection_n = 0;
+   // XY sigma for P inflation (meters). 50m covers any realistic drift from
+   // a chi2 cascade, allowing GPS to pull the filter back from up to ~100m off.
+-  double gnss_p_inflate_sigma = 50.0;
++  //Physics pre-gate: reject GNSS fixess implying a speed above this (m/s).
++  // Applied before the chi-squared gate, which goes blind when P is inflated
++  // after a blackout. 0.0 = disabled.
++  double gnss_max_implied_speed = 20.0;
++  double gnss_p_inflate_sigma = 20.0;
+ };
+ 
+ // How heading was validated: tracked per filter run
+@@ -223,6 +227,7 @@ enum class GnssRejectionReason {
+   MIN_SATS        = 5,  // satellites < min_satellites
+   CHI2_FAILED     = 6,  // Mahalanobis distance > threshold
+   DELAY_TOO_LARGE = 7,  // measurement older than max_measurement_delay
++  SPEED_IMPLAUSIBLE = 8,  // implied speed from last fix exceeds physical limit
+ };
+ 
+ // Per-fix observability data: populated by update_gnss() on every call.
+diff --git a/fusioncore_core/src/fusioncore.cpp b/fusioncore_core/src/fusioncore.cpp
+index 1967c85..2bbf9cb 100644
+--- a/fusioncore_core/src/fusioncore.cpp
++++ b/fusioncore_core/src/fusioncore.cpp
+@@ -753,6 +753,30 @@ bool FusionCore::update_gnss(
+     return false;
+   }
+ 
++  // ── Physics pre-gate: implied-speed check ──────────────────────────────
++  // Runs BEFORE the chi-squared gate. After a GPS blackout the state
++  // covariance inflates, so d2 shrinks and the statistical gate accepts
++  // fixes it would normally reject. A speed limit is independent of P.
++  //
++  // last_gnss_x_/y_ advance only on ACCEPTED fixes, so rejecting the first
++  // fix of a bad cluster keeps the reference anchored and the whole cluster
++  // is refused while implied speed stays above threshold.
++  if (config_.gnss_max_implied_speed > 0.0 && last_gnss_time_ > 0.0) {
++    double dt = timestamp_seconds - last_gnss_time_;
++    if (dt > 0.0) {
++      double dx = fix.x - last_gnss_x_;
++      double dy = fix.y - last_gnss_y_;
++      double implied_speed = std::sqrt(dx*dx + dy*dy) / dt;
++      if (implied_speed > config_.gnss_max_implied_speed) {
++        ++gnss_outliers_;
++        gnss_debug_.accepted       = false;
++        gnss_debug_.mahalanobis_sq = -1.0;
++        gnss_debug_.reason         = GnssRejectionReason::SPEED_IMPLAUSIBLE;
++        return false;
++      }
++    }
++  }
++
+   // Check if this measurement is delayed
+   bool is_delayed = (last_timestamp_ - timestamp_seconds) > config_.min_dt;
+ 
+diff --git a/fusioncore_ros/src/fusion_node.cpp b/fusioncore_ros/src/fusion_node.cpp
+index 9761547..91f6e58 100644
+--- a/fusioncore_ros/src/fusion_node.cpp
++++ b/fusioncore_ros/src/fusion_node.cpp
+@@ -226,6 +226,7 @@ public:
+     declare_parameter("gnss.coast_imu_wz_scale",    1.0);
+     declare_parameter("gnss.recovery_rejection_n",  0);
+     declare_parameter("gnss.p_inflate_sigma",       50.0);
++    declare_parameter("gnss.max_implied_speed",     20.0);
+     declare_parameter("gnss.recovery_timeout_s",    0.0);
+     declare_parameter("gnss.track_heading_enabled",   true);
+     declare_parameter("gnss.track_heading_min_dist",  5.0);
+@@ -474,6 +475,7 @@ public:
+     config.gnss_coast_imu_wz_scale    = get_parameter("gnss.coast_imu_wz_scale").as_double();
+     config.gnss_recovery_rejection_n  = get_parameter("gnss.recovery_rejection_n").as_int();
+     config.gnss_p_inflate_sigma       = get_parameter("gnss.p_inflate_sigma").as_double();
++    config.gnss_max_implied_speed     = get_parameter("gnss.max_implied_speed").as_double();
+     config.gnss_recovery_timeout_s    = get_parameter("gnss.recovery_timeout_s").as_double();
+     config.gps_track_heading_enabled       = get_parameter("gnss.track_heading_enabled").as_bool();
+     config.gps_track_heading_min_dist      = get_parameter("gnss.track_heading_min_dist").as_double();
+-- 
+2.50.1 (Apple Git-155)
+

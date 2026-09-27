@@ -1,0 +1,160 @@
+From 699465447a6ef73bd604daaf45e615c7f73bf2cf Mon Sep 17 00:00:00 2001
+From: Rustam <rustam.ozodkhon@gmail.com>
+Date: Sun, 23 Aug 2026 17:16:13 +0500
+Subject: [PATCH 5/7] fix: eliminate duplicate-timestamp odometry and stack
+ shutdown
+
+Three related defects in the benchmark harness:
+
+1. nclt_player never stopped its executor after playback, so rclpy.spin()
+   never returned and the process never exited.
+2. main() then called rclpy.shutdown() a second time, raising RCLError and
+   exiting non-zero.
+3. nclt_benchmark.launch.py had no teardown handler, so the stack kept
+   running indefinitely after playback.
+
+Separately, publish_state() used a wall timer while stamping messages from
+sim time. Under 3x playback the timer fired roughly twice per /clock tick,
+so ~37% of published odometry carried a duplicate timestamp and identical
+state. Now skipped when the clock has not advanced.
+
+Verified: 60s slice went from 1671 poses (617 duplicates) to 1234 poses,
+zero duplicates, with the stack exiting on its own.
+---
+ .../config/nclt_fusioncore.yaml               |  1 +
+ .../launch/nclt_benchmark.launch.py           | 18 ++++++++++++++++-
+ fusioncore_datasets/scripts/nclt_player.py    | 12 ++++++++++-
+ fusioncore_ros/src/fusion_node.cpp            | 20 +++++++++++++++++++
+ 4 files changed, 49 insertions(+), 2 deletions(-)
+
+diff --git a/fusioncore_datasets/config/nclt_fusioncore.yaml b/fusioncore_datasets/config/nclt_fusioncore.yaml
+index e580546..cc3d25a 100644
+--- a/fusioncore_datasets/config/nclt_fusioncore.yaml
++++ b/fusioncore_datasets/config/nclt_fusioncore.yaml
+@@ -50,6 +50,7 @@ fusioncore:
+     gnss.recovery_rejection_n: 0    # disabled: P inflation via recovery mode was causing outlier acceptance
+     gnss.p_inflate_sigma: 50.0      # unused (recovery_rejection_n=0)
+     gnss.max_implied_speed: 0.0    # physics pre-gate; 0.0 disables
++    ukf.encoder_wz_bias_noise_scale: 1.0   # B_EWZ ablation: 1.0 active, 0.0 frozen
+     gnss.recovery_timeout_s: 0.0    # disabled: chi2 gate with coast_q_factor=10 handles GPS recovery correctly
+ 
+     adaptive.imu: true
+diff --git a/fusioncore_datasets/launch/nclt_benchmark.launch.py b/fusioncore_datasets/launch/nclt_benchmark.launch.py
+index 76bffd1..f14494b 100644
+--- a/fusioncore_datasets/launch/nclt_benchmark.launch.py
++++ b/fusioncore_datasets/launch/nclt_benchmark.launch.py
+@@ -30,10 +30,11 @@ import os
+ from ament_index_python.packages import get_package_share_directory
+ from launch import LaunchDescription
+ from launch.actions import (DeclareLaunchArgument, ExecuteProcess,
+-                             TimerAction, LogInfo)
++                             TimerAction, LogInfo, Shutdown)
+ from launch.substitutions import LaunchConfiguration
+ from launch_ros.actions import Node, LifecycleNode
+ from launch_ros.event_handlers import OnStateTransition
++from launch.event_handlers import OnProcessExit
+ from launch.actions import RegisterEventHandler, EmitEvent
+ from launch_ros.events.lifecycle import ChangeState
+ from lifecycle_msgs.msg import Transition
+@@ -195,6 +196,20 @@ def generate_launch_description():
+         ],
+     )
+ 
++    # Shut the whole stack down when the player exits.
++    # Without this, FusionCore's wall-clock publish timer keeps emitting poses
++    # with a frozen sim-time stamp after /clock stops advancing, padding the bag
++    # with duplicates. The 3 s delay lets the recorder flush before teardown.
++    stop_on_player_exit = RegisterEventHandler(
++        OnProcessExit(
++            target_action=nclt_player,
++            on_exit=[
++                LogInfo(msg='Player finished. Shutting down benchmark stack.'),
++                TimerAction(period=3.0, actions=[Shutdown(reason='playback complete')]),
++            ],
++        )
++    )
++
+     return LaunchDescription(args + [
+         LogInfo(msg='Starting NCLT benchmark...'),
+         nclt_player,
+@@ -202,6 +217,7 @@ def generate_launch_description():
+         gps_tf,
+         fusioncore_node,
+         configure_fc,
++        stop_on_player_exit,
+         activate_fc,
+         rl_ekf,
+         navsat,
+diff --git a/fusioncore_datasets/scripts/nclt_player.py b/fusioncore_datasets/scripts/nclt_player.py
+index ffd8a10..060c8be 100644
+--- a/fusioncore_datasets/scripts/nclt_player.py
++++ b/fusioncore_datasets/scripts/nclt_player.py
+@@ -352,6 +352,11 @@ class NCLTPlayer(Node):
+ 
+                 self._pub_gps(ros_time, data)
+ 
++        # Stop the executor so main() can return and the process can exit.
++        # Without this the node keeps spinning after playback ends, which
++        # prevents the launch file's OnProcessExit handler from firing and
++        # leaves the rest of the stack recording indefinitely.
++        rclpy.shutdown()
+         self.get_logger().info('Playback complete.')
+ 
+     # ── publishers ────────────────────────────────────────────────────────────
+@@ -432,7 +437,12 @@ def main():
+         pass
+     finally:
+         node.destroy_node()
+-        rclpy.shutdown()
++        # Guard: the node calls rclpy.shutdown() itself when playback ends,
++        # so calling it again here raises RCLError and kills the process with
++        # exit code 1. That non-zero exit prevents the launch file's
++        # OnProcessExit handler from tearing down the stack cleanly.
++        if rclpy.ok():
++            rclpy.shutdown()
+ 
+ 
+ if __name__ == '__main__':
+diff --git a/fusioncore_ros/src/fusion_node.cpp b/fusioncore_ros/src/fusion_node.cpp
+index 1544415..4d043b9 100644
+--- a/fusioncore_ros/src/fusion_node.cpp
++++ b/fusioncore_ros/src/fusion_node.cpp
+@@ -2335,8 +2335,23 @@ private:
+     if (!fc_->is_initialized()) return;
+ 
+     const fusioncore::State& s = fc_->get_state();
++
+     auto stamp = now();
+ 
++    // Skip publishing when the clock has not advanced since the last publish.
++    // The publish timer is a wall timer, so under sim time it can fire several
++    // times within a single /clock tick. Each of those publishes carries an
++    // identical stamp and identical state, because the filter only predicts on
++    // an incoming IMU message and no time has passed. Emitting them produces
++    // odometry with duplicate timestamps, which gives zero-length intervals to
++    // any consumer doing time-based interpolation. Nothing is lost by skipping
++    // them: the state is byte-identical to the message already sent.
++    if (last_publish_stamp_.nanoseconds() != 0 &&
++        stamp.nanoseconds() <= last_publish_stamp_.nanoseconds()) {
++      return;
++    }
++    last_publish_stamp_ = stamp;
++
+     nav_msgs::msg::Odometry odom;
+     odom.header.stamp    = stamp;
+     odom.header.frame_id = odom_frame_;
+@@ -2776,6 +2791,11 @@ private:
+   rclcpp::Publisher<fusioncore_ros::msg::GnssStatus>::SharedPtr               gnss_status_pub_;
+   rclcpp::Publisher<fusioncore_ros::msg::FilterHealth>::SharedPtr             filter_health_pub_;
+   rclcpp::TimerBase::SharedPtr                                                publish_timer_;
++
++  // Stamp of the last published odometry message. Used to suppress publishes
++  // that would carry a duplicate timestamp when the wall timer fires more than
++  // once per /clock tick under simulated time.
++  rclcpp::Time last_publish_stamp_{0, 0, RCL_ROS_TIME};
+   rclcpp::TimerBase::SharedPtr                                                diag_timer_;
+   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr                          reset_srv_;
+   rclcpp::Service<fusioncore_ros::srv::FromLL>::SharedPtr                     from_ll_srv_;
+-- 
+2.50.1 (Apple Git-155)
+

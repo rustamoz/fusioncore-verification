@@ -1,0 +1,104 @@
+From bbd34f5d8b475cc560f188b65790b9d7869e8403 Mon Sep 17 00:00:00 2001
+From: Rustam <rustam.ozodkhon@gmail.com>
+Date: Tue, 28 Jul 2026 07:27:10 +0500
+Subject: [PATCH 3/7] feat(ukf): add B_EWZ process-noise scale for controlled
+ ablation
+
+---
+ fusioncore_core/include/fusioncore/fusioncore.hpp | 3 +++
+ fusioncore_core/include/fusioncore/ukf.hpp        | 7 +++++++
+ fusioncore_core/src/fusioncore.cpp                | 3 +++
+ fusioncore_core/src/ukf.cpp                       | 3 +++
+ fusioncore_ros/src/fusion_node.cpp                | 2 ++
+ 5 files changed, 18 insertions(+)
+
+diff --git a/fusioncore_core/include/fusioncore/fusioncore.hpp b/fusioncore_core/include/fusioncore/fusioncore.hpp
+index 2f25ac4..c99b781 100644
+--- a/fusioncore_core/include/fusioncore/fusioncore.hpp
++++ b/fusioncore_core/include/fusioncore/fusioncore.hpp
+@@ -205,6 +205,9 @@ struct FusionCoreConfig {
+   // Applied before the chi-squared gate, which goes blind when P is inflated
+   // after a blackout. 0.0 = disabled.
+   double gnss_max_implied_speed = 20.0;
++
++  // B_EWZ ablation: 1.0 = normal, 0.0 = state frozen at init value (0).
++  double encoder_wz_bias_noise_scale = 1.0;
+   double gnss_p_inflate_sigma = 20.0;
+ };
+ 
+diff --git a/fusioncore_core/include/fusioncore/ukf.hpp b/fusioncore_core/include/fusioncore/ukf.hpp
+index cd8f0fe..727cf88 100644
+--- a/fusioncore_core/include/fusioncore/ukf.hpp
++++ b/fusioncore_core/include/fusioncore/ukf.hpp
+@@ -85,6 +85,12 @@ public:
+   void set_gyro_bias_noise_scale(double s) { gyro_bias_noise_scale_ = s; }
+   double gyro_bias_noise_scale() const     { return gyro_bias_noise_scale_; }
+ 
++  // Ablation lever for the 23rd state (B_EWZ, encoder yaw-rate bias).
++  // Scale 0.0 freezes Q[B_EWZ,B_EWZ] so the state cannot adapt, while
++  // STATE_DIM stays 23 and every matrix dimension is unchanged.
++  void set_encoder_wz_bias_noise_scale(double s) { encoder_wz_bias_noise_scale_ = s; }
++  double encoder_wz_bias_noise_scale() const     { return encoder_wz_bias_noise_scale_; }
++
+   // Inflate P[X,X] and P[Y,Y] to at least sigma_xy_sq using max().
+   // Cross-covariances are untouched so the UKF update handles the correction.
+   void inflate_position_covariance(double sigma_xy_sq) {
+@@ -104,6 +110,7 @@ private:
+   bool   initialized_           = false;
+   double pos_noise_scale_       = 1.0;
+   double gyro_bias_noise_scale_ = 1.0;
++  double encoder_wz_bias_noise_scale_ = 1.0;
+   std::shared_ptr<MotionModelBase> motion_model_;
+ 
+   // UKF weights
+diff --git a/fusioncore_core/src/fusioncore.cpp b/fusioncore_core/src/fusioncore.cpp
+index 2bbf9cb..b88cb5d 100644
+--- a/fusioncore_core/src/fusioncore.cpp
++++ b/fusioncore_core/src/fusioncore.cpp
+@@ -106,6 +106,9 @@ FusionCore::FusionCore(const FusionCoreConfig& config)
+   if (config.motion_model) {
+     ukf_.set_motion_model(config.motion_model);
+   }
++  // B_EWZ ablation lever: applied once at construction so the scale is in
++  // force for every predict step. 1.0 = normal, 0.0 = state frozen.
++  ukf_.set_encoder_wz_bias_noise_scale(config.encoder_wz_bias_noise_scale);
+ }
+ 
+ void FusionCore::set_imu_lever_arm(const sensors::ImuLeverArm& lever_arm) {
+diff --git a/fusioncore_core/src/ukf.cpp b/fusioncore_core/src/ukf.cpp
+index 78c5804..0112d4e 100644
+--- a/fusioncore_core/src/ukf.cpp
++++ b/fusioncore_core/src/ukf.cpp
+@@ -146,6 +146,9 @@ void UKF::predict(double dt) {
+     P_pred(B_GY, B_GY) *= gyro_bias_noise_scale_;
+     P_pred(B_GZ, B_GZ) *= gyro_bias_noise_scale_;
+   }
++  if (encoder_wz_bias_noise_scale_ != 1.0) {
++    P_pred(B_EWZ, B_EWZ) *= encoder_wz_bias_noise_scale_;
++  }
+   for (int i = 0; i < n_sigma; ++i) {
+     // Plain Euclidean difference: no normalize_state here.
+     // With quaternion state there is no angle wrapping; normalizing a diff
+diff --git a/fusioncore_ros/src/fusion_node.cpp b/fusioncore_ros/src/fusion_node.cpp
+index 4f36fe1..1544415 100644
+--- a/fusioncore_ros/src/fusion_node.cpp
++++ b/fusioncore_ros/src/fusion_node.cpp
+@@ -227,6 +227,7 @@ public:
+     declare_parameter("gnss.recovery_rejection_n",  0);
+     declare_parameter("gnss.p_inflate_sigma",       50.0);
+     declare_parameter("gnss.max_implied_speed",     20.0);
++    declare_parameter("ukf.encoder_wz_bias_noise_scale", 1.0);
+     declare_parameter("gnss.recovery_timeout_s",    0.0);
+     declare_parameter("gnss.track_heading_enabled",   true);
+     declare_parameter("gnss.track_heading_min_dist",  5.0);
+@@ -476,6 +477,7 @@ public:
+     config.gnss_recovery_rejection_n  = get_parameter("gnss.recovery_rejection_n").as_int();
+     config.gnss_p_inflate_sigma       = get_parameter("gnss.p_inflate_sigma").as_double();
+     config.gnss_max_implied_speed     = get_parameter("gnss.max_implied_speed").as_double();
++    config.encoder_wz_bias_noise_scale = get_parameter("ukf.encoder_wz_bias_noise_scale").as_double();
+     config.gnss_recovery_timeout_s    = get_parameter("gnss.recovery_timeout_s").as_double();
+     config.gps_track_heading_enabled       = get_parameter("gnss.track_heading_enabled").as_bool();
+     config.gps_track_heading_min_dist      = get_parameter("gnss.track_heading_min_dist").as_double();
+-- 
+2.50.1 (Apple Git-155)
+
