@@ -21,8 +21,9 @@ proposes an implied-speed check to stop them. It justifies this by saying
 the offending fix implies about 3,400 m/s.
 
 It implies **3.4 m/s**: 713.8 m over 211.19 s. A speed check cannot reject
-it. And the statistical gate had already rejected it at five times its
-threshold, along with every other fix in the corrupted cluster.
+it. And the statistical gate had already rejected it at more than five times its
+threshold, along with every other fix in the corrupted cluster, which sat
+about 820 to 840 m from the truth.
 
 The check has a structural problem too. Dividing displacement by the time
 since the last fix gives a limit that grows with the blackout: a 20 m/s

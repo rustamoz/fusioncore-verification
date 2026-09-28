@@ -54,6 +54,7 @@ python3 tools/evaluate.py --gt gt.tum --fusioncore fc.tum --rl rl.tum \
 | Paper's implied-speed arithmetic is off by 1000x | `analysis/scan_gps_jumps.py` |
 | The adversarial cluster is internally smooth | `analysis/gps_cluster_window.py` |
 | Chi-squared gate rejects the corrupted cluster | `analysis/rejection_reasons.py`, `analysis/gnss_status_window.py` |
+| The cluster is ~820-840 m from truth; 45 good fixes rejected after it | `analysis/blackout_recovery.py` |
 | Injected outage landed where intended | `analysis/outage_gaps.py` |
 | Every run initialised at the origin | `analysis/first_pose.py` |
 | Health metrics do not separate the ablation arms | `analysis/filter_health_window.py` |

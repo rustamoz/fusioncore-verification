@@ -2,8 +2,9 @@
 """Per-fix gate decision, Mahalanobis distance and position sigma in a window.
 
 Supports claim one (report section 3): during coast the position sigma
-reaches 77.5 m, yet the specific fix the paper names is rejected at
-d2 = 83.3 against a threshold of 16.27.
+reaches ~68 m, yet the fix the paper names (filter clock t+3944.8 s) is
+rejected at d2 = 90.6 against a threshold of 16.27. Times are the filter's
+clock, which starts 14.79 s after the GPS log's.
 
     python3 gnss_status_window.py path/to/bag --start 3950 --end 3995
 """

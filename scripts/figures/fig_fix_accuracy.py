@@ -42,7 +42,7 @@ for ax, (name, label) in zip(axes, RUNS):
     ax.grid(alpha=0.15, lw=0.5)
     ax.spines[["top", "right"]].set_visible(False)
 axes[0].set_ylabel("fraction of fixes")
-fig.text(0.5, 0.005, "For scale: the corrupted fixes on 2012-08-20 were about 700 m from the truth.",
+fig.text(0.5, 0.005, "For scale: the corrupted fixes on 2012-08-20 were about 820 to 840 m from the truth.",
          ha="center", fontsize=9, color="#5f5e5a")
 fig.suptitle("The fixes the gate rejected were ordinary GPS, within a few metres of the truth",
              fontsize=12, y=0.99)

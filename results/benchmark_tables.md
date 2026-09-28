@@ -46,7 +46,7 @@ longer exist, so that was not confirmed.
 
 ### Large GPS steps in the raw `gps.csv` (script: `scan_gps_jumps.py`)
 
-| Mission time | Step | Elapsed | Implied speed |
+| Mission time (GPS-log clock) | Step | Elapsed | Implied speed |
 |---|---|---|---|
 | t+3959.6 s | 713.8 m | 211.19 s | **3.4 m/s** (paper states ~3400) |
 | t+3984.2 s | 823.5 m | 0.40 s | 2051.4 m/s |
@@ -70,8 +70,10 @@ at intervals of 0.19 to 2.01 s, implied speeds 0.8 to 31.1 m/s.
 |---|---|
 | Fixes accepted | 17,093 |
 | Fixes rejected by the chi-squared gate, whole run | 2,862 |
-| Fix named by the paper, t+3959.6 s | rejected, d2 = 83.3, threshold 16.27 |
-| Window t+3950 to t+3978 s | every fix rejected, d2 71 to 88 (4.4 to 5.4x threshold), in coast mode |
+| Clock offset | the filter's clock starts 14.79 s after the GPS log's; times below are the filter's |
+| Last fix before the blackout, t+3733.65 s | accepted, d2 = 0.88; blackout 211.19 s |
+| Fix named by the paper, t+3944.84 s (GPS log t+3959.63 s) | rejected, d2 = 90.6, threshold 16.27 |
+| Blackout end to first accepted fix | 150 rejected: 43 corrupted (checked vs RTK, ~820-840 m off, d2 71.3-82.5), 45 good (d2 16.33-17.44), 62 without RTK truth |
 | Position sigma in that window | 63.4 to 68.0 m |
 | First fix accepted, t+3978.4 s | d2 = 16.2; sigma 68.01 m to 3.06 m |
 
@@ -133,7 +135,7 @@ Error of each GNSS fix against the nearest RTK ground-truth fix within 1 s.
 The rejected fixes are ordinary GPS, within a few metres of the truth:
 slightly worse than accepted fixes at the median in one run, better in the
 other, and better at the 90th percentile in both. The corrupted fixes on
-2012-08-20 were about 700 m off. The gate was rejecting good GPS.
+2012-08-20 were about 820 to 840 m off. The gate was rejecting good GPS.
 
 ### Natural GPS gaps and what follows them (script: `figures/gps_gaps.py`)
 
