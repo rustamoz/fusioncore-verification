@@ -2,14 +2,14 @@
 
 ## 1. Introduction
 
-FusionCore is an open-source ROS 2 package released in May 2026 by M. Kharwar [1], [2]. It combines IMU, wheel encoder, GPS and visual SLAM data into one 100 Hz odometry stream using a 23-state Unscented Kalman Filter (UKF) [5]. Kharwar benchmarks it against `robot_localization` [4], *the* standard ROS package for this job, across twelve full-length sequences of the University of Michigan NCLT dataset [3], and reports a lower absolute trajectory error on 10 of the 12.
+FusionCore is an open-source ROS 2 package released in May 2026 by M. Kharwar [1], [2]. It combines IMU, wheel encoder, GPS and visual SLAM data into one 100 Hz odometry stream using a 23-state Unscented Kalman Filter (UKF) [5]. Kharwar benchmarks it against `robot_localization` [4], the standard ROS package for this job, across twelve full-length sequences of the University of Michigan NCLT dataset [3], and reports a lower absolute trajectory error on 10 of the 12.
 
 I chose this paper as a project anchor because it makes concrete claims that can be checked. The paper is honest about its worst failure, and proposes a specific fix in its future-work section backed by an arithmetic justification. It also introduces a novel 23rd state and claims that it improves performance, but never isolates it to test that.
 
 So instead of simply reproducing the author's benchmark, I decided to test three specific claims:
 
 1. That a velocity-consistency pre-gate would fix the author's documented failure on the 2012-08-20 sequence.
-2. That the 23rd state *actually* improves performance.
+2. That the 23rd state actually improves performance.
 3. That the paper's account of the failure mechanism is right: that covariance growth during a GPS blackout blinds the filter's statistical outlier gate, which then accepts corrupted fixes.
 
 I implemented the proposed changes and wrote the unit tests that were missing from the repository. I then tested each claim against the source code and the original dataset.
@@ -51,9 +51,9 @@ That result changed how I ran everything afterwards. Full 90-minute sequences lo
 
 The paper's second loss is on the 2012-08-20 sequence, where FusionCore scores 98.3 m against `robot_localization`'s 10.6 m. Section VII-E of the paper [1] diagnoses it in detail. After a 211-second GPS blackout, a cluster of 105 corrupted fixes arrives, each landing 720 to 840 m from the true position. The author argues that the filter's covariance has grown so large during the blackout that its chi-squared outlier gate no longer finds them surprising, so it accepts them, and together they drag the position estimate 788 m off course.
 
-The proposed fix appears in Section IX of the paper: check the implied speed before the statistical gate runs. A fix 720 m from the dead-reckoned position after a 211-second blackout implies roughly 3400 m/s of travel, which is of course impossible for a Segway that moves at 1.5 m/s. The paper describes this as having "zero effect on normal GPS operation," and the reasoning makes sense: a physics limit can't be fooled by uncertainty the way a statistical test can.
+The proposed fix appears in Section IX of the paper: check the implied speed before the statistical gate runs. A fix 720 m from the dead-reckoned position after a 211-second blackout implies roughly 3400 m/s of travel, which is impossible for a Segway that moves at 1.5 m/s. The paper describes this as having "zero effect on normal GPS operation," and the reasoning makes sense: a physics limit can't be fooled by uncertainty the way a statistical test can.
 
-*I decided to implement it.* The changes to the code are pretty limited and live in four places:
+I implemented it. The changes are small and touch four places:
 
 - a new `SPEED_IMPLAUSIBLE` value in the rejection-reason enum
 - a `gnss_max_implied_speed` configuration parameter, set to 20 m/s for my experiments (it defaults to off, so the modified code behaves like upstream unless someone enables it)
@@ -76,7 +76,7 @@ I scanned `gps.csv` for consecutive quality-3 fixes more than 300 m apart and co
 
 713.8 ÷ 211.19 = 3.4 m/s
 
-Not 3400. The paper is off by a factor of a thousand, which is what you get from dividing by 0.211 seconds instead of 211. At 3.4 m/s the fix passes a 20 m/s threshold easily.
+The paper's 3400 m/s is a thousand times too high, consistent with dividing by 0.211 s instead of 211 s. At 3.4 m/s the fix passes a 20 m/s threshold easily.
 
 ![Log-log scatter of every GPS fix-to-fix step on 2012-08-20, elapsed time against displacement, with a diagonal line for a 20 m/s speed threshold. The fix arriving after the 211-second blackout sits below the line; a genuine 823 m jump in 0.4 s sits far above it.](../figures/fig_speedgate.png)
 
@@ -90,24 +90,24 @@ This points at something structural. A check of the form "displacement ÷ time s
 
 The check isn't harmless on ordinary GPS either. Of the 19,741 normal fix-to-fix steps on 2012-08-20, 30 imply more than 20 m/s, so a 20 m/s gate would throw away 30 fixes from normal driving alongside the one real teleport. Whether those 30 are GPS errors or valid readings I didn't determine.
 
-The injected-fault tests showed the same thing from the other direction. A 500 m spike at t=120 s with no preceding blackout produced the same trajectories with the gate on and off: a maximum single-step jump of 1.22 m against 1.30 m. The debug topic showed my gate fired first and caught the spike before the chi-squared gate ran, but in an earlier run of the same test the chi-squared gate had rejected it on its own, with a Mahalanobis distance of 46,515 against a threshold of 16.27. With the covariance small, the existing gate isn't blinded and mine has nothing to add.
+The injected-fault tests showed the same thing from the other direction. A 500 m spike at t=120 s with no preceding blackout produced the same trajectories with the gate on and off: a maximum single-step jump of 1.22 m against 1.30 m. The debug topic showed my gate fired first and caught the spike before the chi-squared gate ran, but in an earlier run of the same test the chi-squared gate had rejected it on its own, with a squared Mahalanobis distance (d²) of 46,515 against a threshold of 16.27. With the covariance small, the existing gate isn't blinded and mine has nothing to add.
 
-The test that actually mattered was a long blackout, since that's the condition the paper describes. I injected a 200-second outage from t=100 s. I also scheduled a spike for one second after GPS returned, but the injector times it from playback start and it didn't land in that window, so what this test actually measured was the gate after a long blackout. The covariance inflation is real and large: position sigma climbed from a median of 1.4 m before the outage to 78.4 m by the end of it, about 55 times larger.
+The test that actually mattered was a long blackout, since that's the condition the paper describes. I injected a 200-second outage from t=100 s. I also scheduled a 500 m spike for one second after GPS returned. The covariance inflation is real and large: position sigma climbed from a median of 1.4 m before the outage to 78.4 m by the end of it, about 55 times larger.
 
-What happened next I misread at first. With no spike in the data, every fix arriving after the outage was genuine, and the chi-squared gate rejected the first 46 of them anyway, with Mahalanobis distances from 16.32 up to 122.7. None were rejected by my pre-gate. The filter had drifted during the outage, so correct fixes looked like outliers. It only accepted one when a fix scored 16.26, just under the 16.27 threshold. I took this as the gate holding up. It's actually a short version of the failure in §5: the gate refusing good GPS after a gap.
+The gate rejected the spike, 703 m from the truth, at a d² of 122.7, even with the uncertainty at 78 m. That part held up. What I misread at first was everything around it. The gate rejected 46 fixes before accepting one, and only one of them was the spike: the other 45 were genuine, 0 to 4 m from the truth, rejected at d² 16.32 to 19.71. None were rejected by my pre-gate. The filter had drifted during the outage, so correct fixes looked like outliers, and it only accepted one when a fix scored 16.26, just under the 16.27 threshold. I took all 46 as the gate holding up. The 45 are actually a short version of the failure in §5: the gate refusing good GPS after a gap.
 
-![Filter position uncertainty rising steadily through a 200-second injected GPS blackout, with the Mahalanobis distance of each GPS fix on a second axis. After the blackout a cluster of rejected fixes sits just above the gate threshold until one falls below it.](../figures/fig_blackout.png)
+![Filter position uncertainty rising steadily through a 200-second injected GPS blackout, with the d² of each GPS fix on a second axis. After the blackout a cluster of rejected fixes sits just above the gate threshold until one falls below it.](../figures/fig_blackout.png)
 
-*Figure 2. During a 200-second injected blackout the filter's position uncertainty grows from 1.4 m to 78.4 m. When GPS returns, the gate rejects 46 genuine fixes before one scores 16.26 against the 16.27 threshold.*
+*Figure 2. During a 200-second injected blackout the filter's position uncertainty grows from 1.4 m to 78.4 m. When GPS returns, the gate rejects the injected spike, and then 45 genuine fixes before one scores 16.26 against the 16.27 threshold.*
 
-The last test settled it. I re-ran the full 2012-08-20 sequence with the debug topics recorded, which capture the rejection reason and Mahalanobis distance for every single fix. Across the run:
+The last test settled it. I re-ran the full 2012-08-20 sequence with the debug topics recorded, which capture the rejection reason and d² for every single fix. Across the run:
 
 - 17,093 fixes accepted
 - 2,862 rejected by the chi-squared gate
 
-The filter's debug output keeps its own clock, which starts 14.79 s after the GPS log's, so from here on times are the filter's: the fix the paper names, t+3959.6 s in the GPS log, is t+3944.8 s. The last fix before the blackout had been accepted normally. From the fix the paper names to t+3978.4 s, every fix was rejected, continuously, with the filter in coast mode and position sigma between 63 and 68 m. The fix the paper names was rejected with a Mahalanobis distance of **90.6** against a threshold of 16.27, more than five times over. At t+3978.4 s one fix finally passed, and sigma collapsed from 68.0 m to 3.06 m in a single update.
+The filter's debug output keeps its own clock, which starts 14.79 s after the GPS log's, so from here on times are the filter's: the fix the paper names, t+3959.6 s in the GPS log, is t+3944.8 s. The last fix before the blackout had been accepted normally. From the fix the paper names to t+3978.4 s, every fix was rejected, continuously, with the filter in coast mode and position sigma between 63 and 68 m. The fix the paper names was rejected with a d² of **90.6** against a threshold of 16.27, more than five times over. At t+3978.4 s one fix finally passed, and sigma collapsed from 68.0 m to 3.06 m in a single update.
 
-The gate rejected the entire adversarial cluster, including the fix the paper singles out. Of the fixes rejected between the end of the blackout and the first accepted one, 43 are corrupted fixes with ground truth to check them against, all about 820 to 840 m off and rejected at d² 71.3 to 82.5; another 62, early in the block, have no ground truth to check.
+The gate rejected the entire adversarial cluster, including the fix the paper singles out. The block between the end of the blackout and the jump back to the truth holds 105 fixes, the number the paper gives, and all were rejected, at d² 71.3 to 92.3. Ground truth covers 43 of them, which sit 819 to 843 m from the truth; the other 62 come first, before ground truth resumes, and score the same high d².
 
 It also rejected more than it should have. After the cluster ended, the gate went on rejecting good fixes, 45 of them, a few metres from the truth, at d² 16.3 to 17.4, just over the threshold, for another nine seconds before one got through. That's a short version of the lockout in §5, on the paper's own sequence.
 
@@ -119,7 +119,7 @@ So no GPS gate can fix it, because the GPS is already being thrown away. The pre
 
 The paper's novelty is a single number, which the author describes as the 23rd state. Alongside the usual gyroscope and accelerometer biases, the 23rd state, `b_ewz`, estimates the wheel encoder's systematic yaw-rate error. On a differential-drive robot this comes from wheel radius mismatch and mechanical asymmetry, and it's close to constant. The filter identifies it from GPS heading while GPS is available, and the paper argues this reduces heading drift during blackouts.
 
-All the other states are pretty standard and established practice, and the author implements them carefully. This one state is the paper's claim to novelty, and it's the one thing the evaluation never isolates. The author added it and changed the set of evaluation sequences in the same step, so the reported improvement has two candidate causes and no way to separate them.
+The other 22 states are standard practice, and the author implements them carefully. This one state is the paper's claim to novelty, and it's the one thing the evaluation never isolates. The author added it and changed the set of evaluation sequences in the same step, so the reported improvement has two candidate causes and no way to separate them.
 
 Running the controlled version needed a switch, which wasn't in the codebase.
 
@@ -127,7 +127,7 @@ Finding where in the code to put the switch proved more difficult than I expecte
 
 The author had already built this mechanism twice, for position and for gyro bias, as runtime multipliers on the process noise inside `predict()`. So the lever is three lines mirroring a pattern already in the file, plus a setter, a member and configuration plumbing. Setting the scale to zero freezes `b_ewz` at its initialised value of zero, which makes its term in the encoder measurement inert. `STATE_DIM` stays at 23, the sigma point count stays at 47, and every matrix keeps its shape. The only thing that changes is whether the 23rd state can adapt.
 
-When I read the encoder measurement function to confirm the term goes inert, something interesting came up. The code computes `z[2] = x[WZ] + x[B_EWZ]`, adding the bias, while the paper's equation 13 subtracts it. I cover that and three other documentation defects in §7.
+When I read the encoder measurement function to confirm the term goes inert, I found a discrepancy. The code computes `z[2] = x[WZ] + x[B_EWZ]`, adding the bias, while the paper's equation 13 subtracts it. I cover that and three other documentation defects in §7.
 
 No test in the repo validates the 23rd state. Both encoder measurement tests leave `b_ewz` at zero, so the term is never observed with a value. The magnetometer feature added in version 0.3.1 got twelve new tests; the paper's headline contribution has none. I wrote two: one setting `b_ewz` to 0.05 with a yaw rate of 0.40 and asserting the measurement comes out at 0.45 rather than 0.35, pinning the sign convention against equation 13, and one confirming the lever freezes the state's variance while leaving `STATE_DIM` at 23.
 
@@ -243,7 +243,7 @@ As far as I can tell, the difference between the two outage runs isn't the 23rd 
 
 This explains the long-run excursions I couldn't account for in §2. I had checked the GPS in a five-second window around one of the jumps, seen healthy fixes and normal covariance, and concluded GPS wasn't involved. It was: the jump is the moment the filter finally accepted GPS after minutes of refusing it. The 324 m and 600 m excursions from my earlier runs look like the same thing, but those recordings no longer exist, so I couldn't confirm it.
 
-It also explains why the injected outages never triggered this failure. The injector deletes fixes while the receiver keeps its signal, so the fix after an injected outage is as good as any other, 1.4 m from the truth. The 46 rejections after the injected outage in §3 were a different, shorter case: the fixes were good, but the estimate had drifted too far for them to fit the gate. A real signal loss is harder than a simulated one, and a test built only on injected outages misses this failure entirely.
+It also explains why the injected outages never triggered this failure. The injector deletes fixes while the receiver keeps its signal, so the fix after an injected outage is as good as any other, 1.4 m from the truth. The 45 good fixes rejected after the injected outage in §3 were a different, shorter case: the fixes were good, but the estimate had drifted too far for them to fit the gate. A real signal loss is harder than a simulated one, and a test built only on injected outages misses this failure entirely.
 
 And it completes the picture from §3. On 2012-08-20 the gate held against the corrupted fixes, because its uncertainty never grew enough to let them through, though it then refused 45 good fixes for nine seconds. On 2012-01-08 it did, and one corrupted fix got in: the paper's failure, on a sequence it didn't examine. The consequence is worse than the paper describes. The bad fix turned the gate against the good GPS that followed, for minutes at a time, and in one run for the whole last third of the sequence.
 
@@ -292,7 +292,7 @@ With those three fixed, a 60-second slice still came out 37% duplicates, so some
 
 About a third of the time, the publish timer reads the same simulated time as the fire before it. Those messages carry the same state as well as the same timestamp, because the filter only predicts when an IMU message arrives and no simulated time has passed. Nothing is lost by not sending them, and odometry with duplicate timestamps is malformed anyway: anything interpolating over time gets zero-length intervals.
 
-What I didn't establish is *why* the node's clock value doesn't advance between those fires. The obvious explanation would be the timer running faster than the clock, but the numbers rule that out. The recordings hold about 902,000 `/clock` messages over roughly 5,500 simulated seconds, which at 3× playback is about 490 clock updates per second of wall time against the timer's 100. The clock updates around five times more often than the timer fires. My best guess is something in how the node caches its clock value, since the timer and the `/clock` subscription run in separate callback groups, but I haven't verified it. The measurement and the fix are solid; the mechanism isn't.
+What I didn't establish is why the node's clock value doesn't advance between those fires. The obvious explanation would be the timer running faster than the clock, but the numbers rule that out. The recordings hold about 902,000 `/clock` messages over roughly 5,500 simulated seconds, which at 3× playback is about 490 clock updates per second of wall time against the timer's 100. The clock updates around five times more often than the timer fires. My best guess is something in how the node caches its clock value, since the timer and the `/clock` subscription run in separate callback groups, but I haven't verified it. The measurement and the fix are solid; the mechanism isn't.
 
 ### The fixes
 
@@ -334,11 +334,11 @@ These are the things I couldn't explain or rule out. They limit what the rest of
 
 **The `robot_localization` baseline.** In every run I made, on both sequences, the EKF baseline scored five to twenty times worse than the author's published figures: around 254 m on 2012-01-08 where he reports 41 m, and 216 m on 2012-08-20 where he reports 10.6 m. It's very consistent, 253.8 to 254.6 m across the four ablation runs, which is what makes it useful as a control. But it also means something systematic differs between my setup and his, in a filter I never touched. I didn't investigate it, because it's outside both contributions and the control property was all I needed from it.
 
-**Whether the 23rd state's effect is systematic.** My first two explanations for the §4 result failed, and the one that survived explains *how* the arms differ, through the lockout, but not *why* the state should change the outcome. The one measurement bearing on it points to chance: while coasting blind before the final gap ended, the two arms drifted by similar amounts, 198 m and 170 m, and the difference in outcome came from the direction of the drift. Escaping a lockout is knife-edge, I ran one run per configuration, and I didn't log the state's value, so I can't tell whether the state makes lockouts systematically worse or just tipped one run. The 12% path-length shortfall is measured three ways and is solid, but I also didn't trace how a yaw-rate bias ends up shortening the estimated distance, since a heading error on its own rotates each step without shortening it.
+**Whether the 23rd state's effect is systematic.** My first two explanations for the §4 result failed, and the one that survived explains how the arms differ, through the lockout, but not why the state should change the outcome. The one measurement bearing on it points to chance: while coasting blind before the final gap ended, the two arms drifted by similar amounts, 198 m and 170 m, and the difference in outcome came from the direction of the drift. Escaping a lockout is knife-edge, I ran one run per configuration, and I didn't log the state's value, so I can't tell whether the state makes lockouts systematically worse or just tipped one run. The 12% path-length shortfall is measured three ways and is solid, but I also didn't trace how a yaw-rate bias ends up shortening the estimated distance, since a heading error on its own rotates each step without shortening it.
 
 **Scope.** The ablation is one sequence, one outage configuration and one run per cell. Playback is deterministic, so repeating a configuration gives identical results and adds nothing, but that's not the same as generalising. The paper's claim is about the general case; my result is about 2012-01-08 with a 200-second injected outage.
 
-In the same way, §3's finding that the chi-squared gate rejects the corrupted cluster only holds for 2012-08-20, where it rejected them at 4.4 to 5.6 times the threshold. On 2012-01-08 a corrupted fix did get through (§5). The paper documents a second loss on 2012-06-15, with a much longer blackout, which I didn't run; it may show the same failure again.
+In the same way, §3's finding that the chi-squared gate rejects the corrupted cluster only holds for 2012-08-20, where it rejected them at 4.4 to 5.7 times the threshold. On 2012-01-08 a corrupted fix did get through (§5). The paper documents a second loss on 2012-06-15, with a much longer blackout, which I didn't run; it may show the same failure again.
 
 **A note on the harness.** The results in §2 and §3 were produced before the §6 fixes. The four ablation runs that §4 and §5 rely on used the corrected build. The fixes don't touch state estimation, and re-scoring the earlier results from deduplicated trajectories reproduced every figure to three decimal places, so the two sets are comparable. They still weren't produced by identical software, and I'd rather state that than leave it implied.
 
@@ -350,11 +350,11 @@ The proposed velocity pre-gate has no target on the sequence it was designed for
 
 The 23rd state didn't improve accuracy in any condition I tested. Freezing it gave a lower trajectory error both with GPS available (9%) and across a 200-second outage (75%). But both differences come down to how long each run was locked out of GPS, and the one direct measurement suggests chance: the two arms drifted by similar amounts while coasting blind, in different directions. So I can't say whether the state makes lockouts systematically worse. What I can say is that the paper's claimed improvement isn't supported.
 
-The paper's account of the failure mechanism is right, but not where the paper found it. On 2012-08-20 the gate held: with position sigma at 63–68 m it still rejected the corrupted cluster at 4.4 to 5.6 times its threshold. On 2012-01-08 it didn't. After a real 112-second signal loss, the uncertainty had grown enough for a fix 157 m from the truth to get through, and the proposed pre-gate would have passed it too, at 1.48 m/s. The consequence is worse than the paper describes. The bad fix collapsed the filter's uncertainty at the wrong place, so the gate then rejected the good fixes that followed, for around a thousand fixes in every run, and in one run for the rest of the sequence. The repository's outage injector can't reproduce this, because an injected outage never produces a corrupted fix.
+The paper's account of the failure mechanism is right, but not where the paper found it. On 2012-08-20 the gate held: with position sigma at 63–68 m it still rejected the corrupted cluster at 4.4 to 5.7 times its threshold. On 2012-01-08 it didn't. After a real 112-second signal loss, the uncertainty had grown enough for a fix 157 m from the truth to get through, and the proposed pre-gate would have passed it too, at 1.48 m/s. The consequence is worse than the paper describes. The bad fix collapsed the filter's uncertainty at the wrong place, so the gate then rejected the good fixes that followed, for around a thousand fixes in every run, and in one run for the rest of the sequence. The repository's outage injector can't reproduce this, because an injected outage never produces a corrupted fix.
 
 Along the way I fixed three defects in the benchmark harness, plus a fourth they were hiding. Recorded odometry was between 38% and 95% duplicate timestamps, the player never exited, and the launch never shut down. Those recordings are malformed, although the published error figures don't depend on it.
 
-What I'd take from this is narrow and worth saying plainly. Every claim here could be checked against the source and the data, and checking took far longer than implementing. The implementations were small. The verification was the work.
+Every claim here could be checked against the source code and the data. The code changes were small; checking what they actually did took most of the project.
 
 ## Code and Data
 

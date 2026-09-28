@@ -73,14 +73,19 @@ at intervals of 0.19 to 2.01 s, implied speeds 0.8 to 31.1 m/s.
 | Clock offset | the filter's clock starts 14.79 s after the GPS log's; times below are the filter's |
 | Last fix before the blackout, t+3733.65 s | accepted, d2 = 0.88; blackout 211.19 s |
 | Fix named by the paper, t+3944.84 s (GPS log t+3959.63 s) | rejected, d2 = 90.6, threshold 16.27 |
-| Blackout end to first accepted fix | 150 rejected: 43 corrupted (checked vs RTK, ~820-840 m off, d2 71.3-82.5), 45 good (d2 16.33-17.44), 62 without RTK truth |
+| Blackout end to first accepted fix | 150 rejected (script: `blackout_recovery.py`) |
+| Corrupted block, t+3944.8 to 3969.0 s | 105 fixes, all rejected, d2 71.29-92.29: 62 first with no RTK truth (d2 82.51-92.29), then 43 checked, 819-843 m from the truth (d2 71.29-82.53) |
+| After the jump back, t+3969.4 to 3978.2 s | 45 good fixes, 2-9 m from the truth, rejected at d2 16.33-17.44 |
+| First accepted fix, t+3978.44 s | d2 16.22, 1.8 m from the truth |
 | Position sigma in that window | 63.4 to 68.0 m |
-| First fix accepted, t+3978.4 s | d2 = 16.2; sigma 68.01 m to 3.06 m |
+| Sigma at the first accepted fix | 68.01 m to 3.06 m |
 
 ### Injected 200 s blackout on 2012-01-08, old harness (script: `coast_sigma.py`)
 
-The injected spike did not land after the blackout (the injector times it
-from playback start), so every fix arriving after the outage was genuine.
+The filter's clock starts 13.92 s after the GPS log's in this run. The last
+fix before the outage was accepted (d2 0.09); the outage lasted 200.26 s.
+The injected spike landed 1.1 s after GPS returned (script:
+`blackout_recovery.py`).
 
 | Quantity | Value |
 |---|---|
@@ -88,10 +93,11 @@ from playback start), so every fix arriving after the outage was genuine.
 | Peak position sigma | 78.4 m (78.13 m on the 1 Hz health topic, 78.42 m at the last rejected fix) |
 | Growth | about 55x |
 | Rejections after the outage | 46, all chi-squared, none by the pre-gate |
-| d2 of those rejections | 16.32 to 122.68 (closest 0.3% over the 16.27 threshold) |
-| First fix accepted | d2 = 16.26, 0.06% under the threshold |
+| Of which: the injected spike | 1, 703 m from the truth, d2 122.68 |
+| Of which: good fixes | 45, 0-4 m from the truth, d2 16.32 to 19.71 (closest 0.3% over the 16.27 threshold) |
+| First fix accepted | d2 = 16.26, 0.06% under the threshold, 0.8 m from the truth |
 
-These 46 were good fixes, so this is a short lockout (section 3 below).
+The 45 good fixes make this a short lockout (section 3 below).
 
 ### Injected spike with no preceding blackout
 

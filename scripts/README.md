@@ -63,7 +63,7 @@ python3 tools/evaluate.py --gt gt.tum --fusioncore fc.tum --rl rl.tum \
 | Duplicate timestamps in recordings | `analysis/dedup.py` |
 | The gate locks out: ~1,000 consecutive rejections in every run | `analysis/rejection_episodes.py` |
 | Rejected fixes are as accurate as accepted ones | `analysis/fix_vs_truth.py` |
-| Sigma grows 55x in a blackout; 46 good fixes rejected after | `analysis/coast_sigma.py` |
+| Sigma grows 55x in a blackout; the spike and 45 good fixes rejected after | `analysis/coast_sigma.py`, `analysis/blackout_recovery.py` |
 | Lockouts follow natural GPS gaps, starting after an accepted fix | `figures/gps_gaps.py` |
 | Lockouts start when a corrupted first fix after a real signal loss gets through | `animations/first_fix.py` |
 | The pre-gate passes every post-gap fix (0.34 to 1.48 m/s) | `animations/first_fix.py` |
