@@ -1,5 +1,7 @@
 # Testing the claims of a published sensor-fusion system
 
+Project page: https://rustamoz.com/work/fusioncore
+
 [FusionCore](https://github.com/manankharwar/fusioncore) is an open-source
 ROS 2 package that fuses IMU, wheel encoders, GPS and visual SLAM with a
 23-state Unscented Kalman Filter. Its paper
